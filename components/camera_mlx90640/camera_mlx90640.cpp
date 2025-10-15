@@ -165,11 +165,39 @@ namespace esphome{
                 }
 
                 
-                this->base_->get_server()->on("/thermal-camera", HTTP_GET, [](AsyncWebServerRequest *request){
-                    ESP_LOGI(TAG, "Sending the image");
-                    request->send(SPIFFS, "/thermal.bmp", "image/bmp", false);
-                });
+                // this->base_->get_server()->on("/thermal-camera", HTTP_GET, [](AsyncWebServerRequest *request){
+                //     ESP_LOGI(TAG, "Sending the image");
+                //     request->send(SPIFFS, "/thermal.bmp", "image/bmp", false);
+                // });
+                // Register a handler that reads the BMP from SPIFFS into memory
+                // and returns it using the wrapper's send(code, content_type, content).
+                this->base_->add_handler("/thermal-camera", HTTP_GET, [this](AsyncWebServerRequest *request) {
+                    if (!SPIFFS.exists("/thermal.bmp")) {
+                        request->send(404, "text/plain", "Not found");
+                        return;
+                    }
 
+                    File f = SPIFFS.open("/thermal.bmp", "r");
+                    if (!f) {
+                        request->send(500, "text/plain", "Failed to open file");
+                        return;
+                    }
+
+                    size_t len = f.size();
+                    std::string buf;
+                    try {
+                        buf.resize(len);
+                        f.read((uint8_t*)buf.data(), len);
+                    } catch (...) {
+                        f.close();
+                        request->send(500, "text/plain", "Read error");
+                        return;
+                    }
+                    f.close();
+
+                    // Use the 3-argument send overload available in web_server_idf wrapper
+                    request->send(200, "image/bmp", buf.c_str());
+                });
         }
         void MLX90640::filter_outlier_pixel(float *pixels_ , int pixel_size , float level){
             for(int i=1 ; i<pixel_size -1 ; i++){
