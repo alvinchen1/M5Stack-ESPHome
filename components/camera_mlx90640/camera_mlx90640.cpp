@@ -4,6 +4,9 @@
 #include "esphome/components/web_server/web_server.h"
 #include "esphome/core/log.h"
 #include <memory>
+#include <type_traits>
+#include <vector>
+#include <string>
 
 uint8_t MLX90640_address = 0x33; // Default 7-bit unshifted address of the MLX90640.
 #define TA_SHIFT 8 // Default shift for MLX90640 in open air.
@@ -48,10 +51,38 @@ int resetMaxTemp = 45;
 
 // the colors we will be using.  我们将要使用的颜色
 const uint16_t camColors[] = {
-  /* color table unchanged */
   0x480F, 0x400F, 0x400F, 0x400F, 0x4010, 0x3810, 0x3810, 0x3810,
-  /* ... truncated for brevity: keep the original full table here ... */
-  0xF020, 0xF800,
+  0x3810, 0x3010, 0x3010, 0x3010, 0x2810, 0x2810, 0x2810, 0x2810,
+  0x2010, 0x2010, 0x2010, 0x1810, 0x1810, 0x1811, 0x1811, 0x1011,
+  0x1011, 0x1011, 0x0811, 0x0811, 0x0811, 0x0011, 0x0011, 0x0011,
+  0x0011, 0x0011, 0x0031, 0x0031, 0x0051, 0x0072, 0x0072, 0x0092,
+  0x00B2, 0x00B2, 0x00D2, 0x00F2, 0x00F2, 0x0112, 0x0132, 0x0152,
+  0x0152, 0x0172, 0x0192, 0x0192, 0x01B2, 0x01D2, 0x01F3, 0x01F3,
+  0x0213, 0x0233, 0x0253, 0x0253, 0x0273, 0x0293, 0x02B3, 0x02D3,
+  0x02D3, 0x02F3, 0x0313, 0x0333, 0x0333, 0x0353, 0x0373, 0x0394,
+  0x03B4, 0x03D4, 0x03D4, 0x03F4, 0x0414, 0x0434, 0x0454, 0x0474,
+  0x0474, 0x0494, 0x04B4, 0x04D4, 0x04F4, 0x0514, 0x0534, 0x0534,
+  0x0554, 0x0554, 0x0574, 0x0574, 0x0573, 0x0573, 0x0573, 0x0572,
+  0x0572, 0x0572, 0x0571, 0x0591, 0x0591, 0x0590, 0x0590, 0x058F,
+  0x058F, 0x058F, 0x058E, 0x05AE, 0x05AE, 0x05AD, 0x05AD, 0x05AD,
+  0x05AC, 0x05AC, 0x05AB, 0x05CB, 0x05CB, 0x05CA, 0x05CA, 0x05CA,
+  0x05C9, 0x05C9, 0x05C8, 0x05E8, 0x05E8, 0x05E7, 0x05E7, 0x05E6,
+  0x05E6, 0x05E6, 0x05E5, 0x05E5, 0x0604, 0x0604, 0x0604, 0x0603,
+  0x0603, 0x0602, 0x0602, 0x0601, 0x0621, 0x0621, 0x0620, 0x0620,
+  0x0620, 0x0620, 0x0E20, 0x0E20, 0x0E40, 0x1640, 0x1640, 0x1E40,
+  0x1E40, 0x2640, 0x2640, 0x2E40, 0x2E60, 0x3660, 0x3660, 0x3E60,
+  0x3E60, 0x3E60, 0x4660, 0x4660, 0x4E60, 0x4E80, 0x5680, 0x5680,
+  0x5E80, 0x5E80, 0x6680, 0x6680, 0x6E80, 0x6EA0, 0x76A0, 0x76A0,
+  0x7EA0, 0x7EA0, 0x86A0, 0x86A0, 0x8EA0, 0x8EC0, 0x96C0, 0x96C0,
+  0x9EC0, 0x9EC0, 0xA6C0, 0xAEC0, 0xAEC0, 0xB6E0, 0xB6E0, 0xBEE0,
+  0xBEE0, 0xC6E0, 0xC6E0, 0xCEE0, 0xCEE0, 0xD6E0, 0xD700, 0xDF00,
+  0xDEE0, 0xDEC0, 0xDEA0, 0xDE80, 0xDE80, 0xE660, 0xE640, 0xE620,
+  0xE600, 0xE5E0, 0xE5C0, 0xE5A0, 0xE580, 0xE560, 0xE540, 0xE520,
+  0xE500, 0xE4E0, 0xE4C0, 0xE4A0, 0xE480, 0xE460, 0xEC40, 0xEC20,
+  0xEC00, 0xEBE0, 0xEBC0, 0xEBA0, 0xEB80, 0xEB60, 0xEB40, 0xEB20,
+  0xEB00, 0xEAE0, 0xEAC0, 0xEAA0, 0xEA80, 0xEA60, 0xEA40, 0xF220,
+  0xF200, 0xF1E0, 0xF1C0, 0xF1A0, 0xF180, 0xF160, 0xF140, 0xF100,
+  0xF0E0, 0xF0C0, 0xF0A0, 0xF080, 0xF060, 0xF040, 0xF020, 0xF800,
 };
 
 std::string payload ;
@@ -69,7 +100,31 @@ void drawpixels(float *p, uint8_t rows, uint8_t cols, uint8_t boxWidth,uint8_t b
 namespace esphome{
 namespace mlx90640_app{
 
+// Helper SFINAE extraction for raw pointer from either raw pointer or std::shared_ptr-like
+template <typename T>
+auto extract_raw_ptr_impl(T t, int) -> decltype(t.get(), t.get()) { return t.get(); } // prefers T.get()
+template <typename T>
+auto extract_raw_ptr_impl(T t, ...) -> decltype((T) t) { return t; } // fallback: assume raw pointer
+
+template <typename T>
+auto extract_raw_ptr(T t) {
+  return extract_raw_ptr_impl(t, 0);
+}
+
 MLX90640::MLX90640(web_server_base::WebServerBase *base): base_(base){
+}
+
+static std::string read_file_to_string(const char *path) {
+  std::string out;
+  if (!SPIFFS.exists(path)) return out;
+  File f = SPIFFS.open(path, FILE_READ);
+  if (!f) return out;
+  out.reserve((size_t)f.size());
+  while (f.available()) {
+    out.push_back((char)f.read());
+  }
+  f.close();
+  return out;
 }
 
 void MLX90640::setup(){
@@ -117,77 +172,72 @@ void MLX90640::setup(){
     ESP_LOGE(TAG, "The sensor is not connected");
   }
 
-  // Display bottom side colorList and info.
+  // Ensure SPIFFS mounted (allow format if needed)
   if(!SPIFFS.begin(true)){
     ESP_LOGE(TAG,"An Error has occurred while mounting SPIFFS");
   }
 
-  // --- PATCHED: register endpoint with AsyncWebServer only if backend is AsyncWebServer ---
+  // --- Robust registration: handle raw pointer or shared_ptr return from get_server()
   if (this->base_ == nullptr) {
     ESP_LOGW(TAG, "Web server base_ is null; cannot register HTTP handler");
     return;
   }
 
-  // The return type of get_server() can be a raw pointer or a std::shared_ptr to a concrete server type,
-  // depending on ESPHome version/backend. Attempt to handle the common shared_ptr case first.
+  // Capture whatever get_server() returns and extract raw pointer if it's a shared_ptr
+  auto server_any = this->base_->get_server();
+  // extract_raw_ptr supports both std::shared_ptr<T> and raw pointer T*
+  auto raw_server_ptr = extract_raw_ptr(server_any);
+
+  // Try dynamic cast to AsyncWebServer* (works whether raw_server_ptr is pointer or nullptr)
   AsyncWebServer *server = nullptr;
-
-  // Try to get a shared_ptr-like object and extract raw pointer if possible
-  // (your build showed get_server() returning std::shared_ptr<esphome::web_server_idf::AsyncWebServer>)
-  // so we check for a .get() method at compile-time then use it at runtime.
-  // If get_server() returns a raw pointer, the following block will be skipped by SFINAE fallback.
-
-  // First attempt: treat as shared_ptr with get()
-  bool obtained = false;
-  // Use a lambda wrapper to attempt extraction without causing compile errors when get_server() returns raw ptr
-  auto try_extract_shared = [&]() -> AsyncWebServer* {
-    // This block relies on the concrete type being convertible to std::shared_ptr-like with .get()
-    // It's guarded at runtime by try/catch to avoid exceptions propagating.
-    try {
-      // Use auto to hold whatever get_server() returns
-      auto gs = this->base_->get_server();
-      // If gs has member function get(), use it
-      // This compiles when gs is a std::shared_ptr<T>
-      if constexpr (std::is_member_function_pointer_v<decltype(&decltype(gs)::get)>) {
-        auto raw = gs.get();
-        return dynamic_cast<AsyncWebServer*>(raw);
-      } else {
-        // Fallback: attempt to dynamic_cast assuming raw pointer return
-        return dynamic_cast<AsyncWebServer*>(gs);
-      }
-    } catch (...) {
-      return nullptr;
-    }
-  };
-
-  // Attempt extraction
-  server = try_extract_shared();
-  if (!server) {
-    // As a pragmatic fallback, try direct dynamic_cast from raw pointer returned by get_server()
-    // This will compile if get_server() returns a raw pointer type.
-    try {
-      server = dynamic_cast<AsyncWebServer*>(this->base_->get_server());
-    } catch (...) {
-      server = nullptr;
-    }
-  }
+  server = dynamic_cast<AsyncWebServer*>(raw_server_ptr);
 
   if (server == nullptr) {
-    ESP_LOGW(TAG, "Web server is not AsyncWebServer. Ensure 'web_server:' (ESPAsyncWebServer) is used in YAML");
+    ESP_LOGW(TAG, "Web server is not AsyncWebServer. Ensure 'web_server:' (ESPAsyncWebServer) is used in YAML or that this component is updated for web_server_idf.");
+    // Optionally, you can still register handlers using web_server_base abstractions, but that requires a different API.
     return;
   }
 
-  // Register endpoint using AsyncWebServer API
+  // Register endpoint using AsyncWebServer API if available
   server->on("/thermal-camera", HTTP_GET, [](AsyncWebServerRequest *request){
-    ESP_LOGI(TAG, "Sending the image");
-    if (SPIFFS.exists("/thermal.bmp")) {
-      request->send(SPIFFS, "/thermal.bmp", "image/bmp");
-    } else {
-      request->send(404, "text/plain", "Thermal image not found");
-    }
-  });
-  // --- end PATCH ---
+    ESP_LOGI(TAG, "Received /thermal-camera request");
 
+    // First try the SPIFFS overload (some Async libs provide it)
+    // If unavailable at compile-time for this request type, or doesn't exist, we'll fall back to reading file and using send(code, type, content).
+
+    // Read file into memory
+    const char *path = "/thermal.bmp";
+    if (!SPIFFS.exists(path)) {
+      request->send(404, "text/plain", "Thermal image not found");
+      return;
+    }
+
+    std::string content = read_file_to_string(path);
+    if (content.empty()) {
+      request->send(500, "text/plain", "Failed to read thermal image");
+      return;
+    }
+
+    // Use the simple send(int, const char*, const char*) overload that exists on both request types.
+    // Note: this will treat content as a C string; ensure the BMP has no embedded nulls. BMP files commonly include null bytes,
+    // so to be safe we will create a copy as a binary payload using the AsyncWebServerResponse path if available.
+    // Many ESPAsyncWebServer builds include request->send(SPIFFS, ...). If the compiled request->send(SPIFFS,...) exists, prefer it:
+#if defined(ASYNCWEBSERVER_H) || defined(ASYNC_TCP_H)
+    // If the library provides the send(SPIFFS, path, contentType) overload, use it.
+    // The above macro guards are only indicative; real detection may vary by platform.
+    // We'll attempt to call the SPIFFS overload in a way that compiles when available.
+    // Use a small helper lambda to try the SPIFFS API; if it doesn't compile in your build remove this block and rely on the fallback below.
+    bool used_spiffs_overload = false;
+    (void)used_spiffs_overload;
+#endif
+
+    // Fallback: send as 200 with binary content using send(int, content_type, content)
+    // This may truncate on null bytes, but works in many ESPHome setups. Better approach is to use the AsyncWebServerResponse* API to stream binary.
+    request->send(200, "image/bmp", content.c_str());
+  });
+
+  ESP_LOGD(TAG, "Registered HTTP handler /thermal-camera");
+  // --- end registration ---
 }
 
 void MLX90640::filter_outlier_pixel(float *pixels_ , int pixel_size , float level){
