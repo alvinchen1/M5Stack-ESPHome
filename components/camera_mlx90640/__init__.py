@@ -25,7 +25,7 @@ AUTO_LOAD = ["sensor"]
 mlx90640_ns = cg.esphome_ns.namespace("mlx90640_app")
 MLX90640 = mlx90640_ns.class_(
     "MLX90640",
-    cg.PollingComponent,  # Keep as PollingComponent
+    cg.PollingComponent,
     i2c.I2CDevice
 )
 
@@ -40,55 +40,54 @@ CONF_MAX_TEMPERATURE = "max_temperature"
 CONF_MEAN_TEMPERATURE = "mean_temperature"
 CONF_MEDIAN_TEMPERATURE = "median_temperature"
 
-# Configuration schema
-CONFIG_SCHEMA = cv.All(
-    cv.Schema(
-        {
-            cv.GenerateID(): cv.declare_id(MLX90640),
-            cv.Required(CONF_SDA): cv.int_,
-            cv.Required(CONF_SCL): cv.int_,
-            cv.Optional(CONF_FREQUENCY, default=400000): cv.int_,
-            cv.Optional(CONF_ADDRESS, default=0x33): cv.i2c_address,
-            cv.Optional(CONF_MINTEMP, default=0): cv.float_,
-            cv.Optional(CONF_MAXTEMP, default=80): cv.float_,
-            cv.Optional(CONF_REFRESH_RATE, default=0x04): cv.hex_uint8_t,
-            cv.Optional(CONF_MIN_TEMPERATURE): sensor.sensor_schema(
-                unit_of_measurement=UNIT_CELSIUS,
-                accuracy_decimals=1,
-                device_class=DEVICE_CLASS_TEMPERATURE,
-                state_class=STATE_CLASS_MEASUREMENT,
-            ),
-            cv.Optional(CONF_MAX_TEMPERATURE): sensor.sensor_schema(
-                unit_of_measurement=UNIT_CELSIUS,
-                accuracy_decimals=1,
-                device_class=DEVICE_CLASS_TEMPERATURE,
-                state_class=STATE_CLASS_MEASUREMENT,
-            ),
-            cv.Optional(CONF_MEAN_TEMPERATURE): sensor.sensor_schema(
-                unit_of_measurement=UNIT_CELSIUS,
-                accuracy_decimals=1,
-                device_class=DEVICE_CLASS_TEMPERATURE,
-                state_class=STATE_CLASS_MEASUREMENT,
-            ),
-            cv.Optional(CONF_MEDIAN_TEMPERATURE): sensor.sensor_schema(
-                unit_of_measurement=UNIT_CELSIUS,
-                accuracy_decimals=1,
-                device_class=DEVICE_CLASS_TEMPERATURE,
-                state_class=STATE_CLASS_MEASUREMENT,
-            ),
-        }
-    )
-    .extend(cv.polling_component_schema("60s"))
-    .extend(i2c.i2c_device_schema(default_address=0x33))
-)
+# Base configuration schema
+BASE_SCHEMA = cv.Schema(
+    {
+        cv.GenerateID(): cv.declare_id(MLX90640),
+        cv.Required(CONF_SDA): cv.int_,
+        cv.Required(CONF_SCL): cv.int_,
+        cv.Optional(CONF_FREQUENCY, default=400000): cv.int_,
+        cv.Optional(CONF_ADDRESS, default=0x33): cv.i2c_address,
+        cv.Optional(CONF_MINTEMP, default=0): cv.float_,
+        cv.Optional(CONF_MAXTEMP, default=80): cv.float_,
+        cv.Optional(CONF_REFRESH_RATE, default=0x04): cv.hex_uint8_t,
+        cv.Optional(CONF_MIN_TEMPERATURE): sensor.sensor_schema(
+            unit_of_measurement=UNIT_CELSIUS,
+            accuracy_decimals=1,
+            device_class=DEVICE_CLASS_TEMPERATURE,
+            state_class=STATE_CLASS_MEASUREMENT,
+        ),
+        cv.Optional(CONF_MAX_TEMPERATURE): sensor.sensor_schema(
+            unit_of_measurement=UNIT_CELSIUS,
+            accuracy_decimals=1,
+            device_class=DEVICE_CLASS_TEMPERATURE,
+            state_class=STATE_CLASS_MEASUREMENT,
+        ),
+        cv.Optional(CONF_MEAN_TEMPERATURE): sensor.sensor_schema(
+            unit_of_measurement=UNIT_CELSIUS,
+            accuracy_decimals=1,
+            device_class=DEVICE_CLASS_TEMPERATURE,
+            state_class=STATE_CLASS_MEASUREMENT,
+        ),
+        cv.Optional(CONF_MEDIAN_TEMPERATURE): sensor.sensor_schema(
+            unit_of_measurement=UNIT_CELSIUS,
+            accuracy_decimals=1,
+            device_class=DEVICE_CLASS_TEMPERATURE,
+            state_class=STATE_CLASS_MEASUREMENT,
+        ),
+    }
+).extend(cv.polling_component_schema("60s")).extend(i2c.i2c_device_schema(default_address=0x33))
 
-# Add web server support (optional, backward compatible)
+# Add web server support if available
 if USE_WEBSERVER:
-    CONFIG_SCHEMA = CONFIG_SCHEMA.extend(
+    BASE_SCHEMA = BASE_SCHEMA.extend(
         {
             cv.Optional(CONF_WEB_SERVER_ID): cv.use_id(web_server_base.WebServerBase),
         }
     )
+
+# Final schema wrapped in cv.All
+CONFIG_SCHEMA = cv.All(BASE_SCHEMA)
 
 
 async def to_code(config):
