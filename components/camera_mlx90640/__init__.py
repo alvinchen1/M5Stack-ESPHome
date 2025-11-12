@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import sensor, i2c, camera
+from esphome.components import sensor, i2c
 from esphome.const import (
     CONF_ID,
     CONF_ADDRESS,
@@ -19,14 +19,13 @@ except ImportError:
     USE_WEBSERVER = False
 
 DEPENDENCIES = ["i2c"]
-AUTO_LOAD = ["sensor", "camera"]  # ADDED: camera to auto_load
+AUTO_LOAD = ["sensor"]
 
 # Component namespace
 mlx90640_ns = cg.esphome_ns.namespace("mlx90640_app")
 MLX90640 = mlx90640_ns.class_(
-    "MLX90640", 
-    camera.Camera,  # MODIFIED: Now inherits from Camera
-    cg.PollingComponent, 
+    "MLX90640",
+    cg.PollingComponent,  # Keep as PollingComponent
     i2c.I2CDevice
 )
 
@@ -43,7 +42,7 @@ CONF_MEDIAN_TEMPERATURE = "median_temperature"
 
 # Configuration schema
 CONFIG_SCHEMA = cv.All(
-    camera.CAMERA_SCHEMA.extend(  # MODIFIED: Extend camera schema instead of just component
+    cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(MLX90640),
             cv.Required(CONF_SDA): cv.int_,
@@ -79,10 +78,11 @@ CONFIG_SCHEMA = cv.All(
             ),
         }
     )
+    .extend(cv.polling_component_schema("60s"))
     .extend(i2c.i2c_device_schema(default_address=0x33))
 )
 
-# ADDED: Web server support (optional, backward compatible)
+# Add web server support (optional, backward compatible)
 if USE_WEBSERVER:
     CONFIG_SCHEMA = CONFIG_SCHEMA.extend(
         {
@@ -97,9 +97,6 @@ async def to_code(config):
     
     # Register as polling component
     await cg.register_component(var, config)
-    
-    # ADDED: Register as camera
-    await camera.register_camera(var, config)
     
     # Register as I2C device
     await i2c.register_i2c_device(var, config)
@@ -130,7 +127,7 @@ async def to_code(config):
         sens = await sensor.new_sensor(config[CONF_MEDIAN_TEMPERATURE])
         cg.add(var.set_median_temperature_sensor(sens))
 
-    # ADDED: Web server support (optional, backward compatible)
+    # Web server support (optional, backward compatible)
     if USE_WEBSERVER and CONF_WEB_SERVER_ID in config:
         web_server = await cg.get_variable(config[CONF_WEB_SERVER_ID])
         cg.add(var.set_base(web_server))
