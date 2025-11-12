@@ -1,64 +1,101 @@
-#ifndef __MLX90640__
-#define __MLX90640__
-#include<esphome.h>
-#include "esphome/components/web_server_base/web_server_base.h"
+#pragma once
+
 #include "esphome/core/component.h"
+#include "esphome/core/hal.h"
 #include "esphome/components/sensor/sensor.h"
-#include "esphome/components/text_sensor/text_sensor.h"
+#include "esphome/components/i2c/i2c.h"
+#include "esphome/components/camera/camera.h"  // ADDED FOR CAMERA SUPPORT
+
+#ifdef USE_WEBSERVER
+#include "esphome/components/web_server_base/web_server_base.h"
+#endif
+
 #include "MLX90640_API.h"
 #include "MLX90640_I2C_Driver.h"
-#include <Wire.h>
-
 
 namespace esphome {
-    namespace mlx90640_app{
-         //class MLXDriver ;
-         //class MLXApi ;
+namespace mlx90640_app {
 
-         class MLX90640: public PollingComponent {
-              private:
-                TwoWire *wire ;
-                uint8_t addr_ ;
-                uint8_t sda_ ;
-                uint8_t scl_ ;
-                float mintemp_;
-                float maxtemp_; 
-                int frequency_ ;
-                int refresh_rate_ = -1 ;
-                float filter_level_= 10.0 ;
-                web_server_base::WebServerBase *base_;
-                sensor::Sensor *min_temperature_sensor_{nullptr} ;
-                sensor::Sensor *max_temperature_sensor_{nullptr};
-                sensor::Sensor *mean_temperature_sensor_{nullptr};
-                sensor::Sensor *median_temperature_sensor_{nullptr};
-                //sensor::Sensor *min_index ;
-                // sensor::Sensor *max_index ;
-              public:
-                MLX90640(web_server_base::WebServerBase *base);
-               float get_setup_priority() const override { return setup_priority::LATE; }
-               void setup() override ;
-               void update() override ;
-               void create_image();
-               void mlx_update() ;
-               void set_min_temperature_sensor(sensor::Sensor *ts){this->min_temperature_sensor_ = ts;}
-               void set_max_temperature_sensor(sensor::Sensor *ts){this->max_temperature_sensor_= ts;};
-               void set_mean_temperature_sensor(sensor::Sensor *ts){this->mean_temperature_sensor_= ts;};
-               void set_median_temperature_sensor(sensor::Sensor *ts){this->median_temperature_sensor_= ts;};
-               void set_addr(uint8_t addr){this->addr_ = addr;}
-               void set_sda(uint8_t sda){this->sda_ = sda ;}
-               void set_scl(uint8_t scl){this->scl_ = scl ;}
-               void set_frequency(int freq){this->frequency_ = freq ;}
-               void set_mintemp(float min ){this->mintemp_ = min ;}
-               void set_maxtemp(float max ){this->maxtemp_ = max ;}
-               void set_refresh_rate(int refresh){this->refresh_rate_ = refresh;}
-              
-               // filtering function
-               void set_filter_level(float level){this->filter_level_ = level ;}
-               void filter_outlier_pixel(float *pixels , int size , float level);
-               
-        };
-    }
-}
+// MODIFIED: Now inherits from camera::Camera
+class MLX90640 : public camera::Camera, public PollingComponent, public i2c::I2CDevice {
+ public:
+  MLX90640() = default;
 
+  void setup() override;
+  void update() override;
+  void loop() override;
+  void dump_config() override;
+  float get_setup_priority() const override { return setup_priority::DATA; }
 
+  // ADDED: Camera interface methods
+  void request_image(camera::Camera::RequestType type) override;
+  camera::CameraImageData *get_snapshot() override;
+
+  // Sensor setters
+  void set_min_temperature_sensor(sensor::Sensor *min_temperature_sensor) {
+    this->min_temperature_sensor_ = min_temperature_sensor;
+  }
+  void set_max_temperature_sensor(sensor::Sensor *max_temperature_sensor) {
+    this->max_temperature_sensor_ = max_temperature_sensor;
+  }
+  void set_mean_temperature_sensor(sensor::Sensor *mean_temperature_sensor) {
+    this->mean_temperature_sensor_ = mean_temperature_sensor;
+  }
+  void set_median_temperature_sensor(sensor::Sensor *median_temperature_sensor) {
+    this->median_temperature_sensor_ = median_temperature_sensor;
+  }
+
+  // Configuration setters
+  void set_sda_pin(int sda) { this->sda_pin_ = sda; }
+  void set_scl_pin(int scl) { this->scl_pin_ = scl; }
+  void set_frequency(int frequency) { this->frequency_ = frequency; }
+  void set_address(uint8_t address) { this->address_ = address; }
+  void set_mintemp(float mintemp) { this->mintemp_ = mintemp; }
+  void set_maxtemp(float maxtemp) { this->maxtemp_ = maxtemp; }
+  void set_refresh_rate(uint8_t refresh_rate) { this->refresh_rate_ = refresh_rate; }
+
+#ifdef USE_WEBSERVER
+  void set_base(web_server_base::WebServerBase *base) { this->base_ = base; }
 #endif
+
+ protected:
+  // Sensor outputs
+  sensor::Sensor *min_temperature_sensor_{nullptr};
+  sensor::Sensor *max_temperature_sensor_{nullptr};
+  sensor::Sensor *mean_temperature_sensor_{nullptr};
+  sensor::Sensor *median_temperature_sensor_{nullptr};
+
+  // Configuration
+  int sda_pin_;
+  int scl_pin_;
+  int frequency_;
+  uint8_t address_;
+  float mintemp_;
+  float maxtemp_;
+  uint8_t refresh_rate_;
+
+#ifdef USE_WEBSERVER
+  web_server_base::WebServerBase *base_{nullptr};
+#endif
+
+  // MLX90640 specific
+  paramsMLX90640 mlx90640_;
+  uint16_t eeMLX90640_[832];
+  float mlx90640To_[768];  // 32x24 thermal array
+  float min_value_;
+  float max_value_;
+  
+  // ADDED: Camera data
+  std::vector<uint8_t> current_image_;
+  bool image_ready_{false};
+  uint32_t last_frame_time_{0};
+  
+  // ADDED: Helper methods
+  void read_thermal_data_();
+  void generate_camera_image_();
+  void publish_sensors_();
+  void apply_color_map_(float normalized_value, uint8_t &r, uint8_t &g, uint8_t &b);
+};
+
+}  // namespace mlx90640_app
+}  // namespace esphome
