@@ -4,7 +4,6 @@
 #include "esphome/core/hal.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/i2c/i2c.h"
-#include "esphome/components/camera/camera.h"  // ADDED FOR CAMERA SUPPORT
 
 #ifdef USE_WEBSERVER
 #include "esphome/components/web_server_base/web_server_base.h"
@@ -16,8 +15,8 @@
 namespace esphome {
 namespace mlx90640_app {
 
-// MODIFIED: Now inherits from camera::Camera
-class MLX90640 : public camera::Camera, public PollingComponent, public i2c::I2CDevice {
+// Keep as PollingComponent only (camera functionality via web server)
+class MLX90640 : public PollingComponent, public i2c::I2CDevice {
  public:
   MLX90640() = default;
 
@@ -26,10 +25,6 @@ class MLX90640 : public camera::Camera, public PollingComponent, public i2c::I2C
   void loop() override;
   void dump_config() override;
   float get_setup_priority() const override { return setup_priority::DATA; }
-
-  // ADDED: Camera interface methods
-  void request_image(camera::Camera::RequestType type) override;
-  camera::CameraImageData *get_snapshot() override;
 
   // Sensor setters
   void set_min_temperature_sensor(sensor::Sensor *min_temperature_sensor) {
@@ -56,6 +51,10 @@ class MLX90640 : public camera::Camera, public PollingComponent, public i2c::I2C
 
 #ifdef USE_WEBSERVER
   void set_base(web_server_base::WebServerBase *base) { this->base_ = base; }
+  
+  // Method to get current image for web server
+  std::vector<uint8_t> get_current_image() { return this->current_image_; }
+  bool is_image_ready() { return this->image_ready_; }
 #endif
 
  protected:
@@ -85,14 +84,14 @@ class MLX90640 : public camera::Camera, public PollingComponent, public i2c::I2C
   float min_value_;
   float max_value_;
   
-  // ADDED: Camera data
+  // Image data for web server
   std::vector<uint8_t> current_image_;
   bool image_ready_{false};
   uint32_t last_frame_time_{0};
   
-  // ADDED: Helper methods
+  // Helper methods
   void read_thermal_data_();
-  void generate_camera_image_();
+  void generate_bmp_image_();
   void publish_sensors_();
   void apply_color_map_(float normalized_value, uint8_t &r, uint8_t &g, uint8_t &b);
 };
