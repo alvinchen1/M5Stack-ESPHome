@@ -15,15 +15,15 @@ class ThermalImageHandler : public AsyncWebHandler {
  public:
   ThermalImageHandler(MLX90640 *parent) : parent_(parent) {}
   
-  bool canHandle(AsyncWebServerRequest *request) override {
+  bool canHandle(AsyncWebServerRequest *request) {
     if (request->method() != HTTP_GET) {
       return false;
     }
-    String url = request->url();
+    std::string url = request->url();
     return url == "/thermal-camera" || url == "/thermal.bmp";
   }
   
-  void handleRequest(AsyncWebServerRequest *request) override {
+  void handleRequest(AsyncWebServerRequest *request) {
     if (!this->parent_->is_image_ready()) {
       request->send(404, "text/plain", "No thermal image available");
       return;
@@ -35,22 +35,16 @@ class ThermalImageHandler : public AsyncWebHandler {
       return;
     }
     
-    // Send BMP image
+    // Send BMP image as binary data
     AsyncWebServerResponse *response = request->beginResponse(
         200,
         "image/bmp",
-        [image](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
-          if (index >= image.size()) {
-            return 0;
-          }
-          size_t toSend = std::min(maxLen, image.size() - index);
-          memcpy(buffer, image.data() + index, toSend);
-          return toSend;
-        }
+        image.data(),
+        image.size()
     );
     
     response->addHeader("Content-Disposition", "inline; filename=thermal.bmp");
-    response->addHeader("Cache-Control", "no-cache");
+    response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     request->send(response);
   }
   
