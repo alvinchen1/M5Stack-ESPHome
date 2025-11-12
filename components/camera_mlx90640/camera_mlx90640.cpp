@@ -9,6 +9,56 @@ namespace mlx90640_app {
 
 static const char *const TAG = "MLX90640";
 
+#ifdef USE_WEBSERVER
+// Custom web handler for thermal images
+class ThermalImageHandler : public AsyncWebHandler {
+ public:
+  ThermalImageHandler(MLX90640 *parent) : parent_(parent) {}
+  
+  bool canHandle(AsyncWebServerRequest *request) override {
+    if (request->method() != HTTP_GET) {
+      return false;
+    }
+    String url = request->url();
+    return url == "/thermal-camera" || url == "/thermal.bmp";
+  }
+  
+  void handleRequest(AsyncWebServerRequest *request) override {
+    if (!this->parent_->is_image_ready()) {
+      request->send(404, "text/plain", "No thermal image available");
+      return;
+    }
+    
+    std::vector<uint8_t> image = this->parent_->get_current_image();
+    if (image.empty()) {
+      request->send(500, "text/plain", "Failed to generate thermal image");
+      return;
+    }
+    
+    // Send BMP image
+    AsyncWebServerResponse *response = request->beginResponse(
+        200,
+        "image/bmp",
+        [image](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+          if (index >= image.size()) {
+            return 0;
+          }
+          size_t toSend = std::min(maxLen, image.size() - index);
+          memcpy(buffer, image.data() + index, toSend);
+          return toSend;
+        }
+    );
+    
+    response->addHeader("Content-Disposition", "inline; filename=thermal.bmp");
+    response->addHeader("Cache-Control", "no-cache");
+    request->send(response);
+  }
+  
+ protected:
+  MLX90640 *parent_;
+};
+#endif
+
 // ============================================================================
 // Setup
 // ============================================================================
@@ -38,16 +88,16 @@ void MLX90640::setup() {
   // Set refresh rate
   MLX90640_SetRefreshRate(this->address_, this->refresh_rate_);
 
-  // Initialize SPIFFS (for backward compatibility with web server if enabled)
+  // Initialize SPIFFS (optional, for backward compatibility)
   if (!SPIFFS.begin(true)) {
-    ESP_LOGW(TAG, "Failed to mount SPIFFS");
+    ESP_LOGD(TAG, "SPIFFS not available");
   }
 
-  // Web server handler (keep for backward compatibility)
+  // Setup web server handler
 #ifdef USE_WEBSERVER
   if (this->base_ != nullptr) {
-    ESP_LOGI(TAG, "Web server support available but not used for camera streaming");
-    // Removed old web server code - camera now streams via ESPHome API
+    ESP_LOGI(TAG, "Registering thermal camera web handler");
+    this->base_->add_handler(new ThermalImageHandler(this));
   }
 #endif
 
@@ -64,13 +114,13 @@ void MLX90640::update() {
   // Read thermal data from sensor
   this->read_thermal_data_();
 
-  // Generate camera image for streaming
-  this->generate_camera_image_();
+  // Generate BMP image
+  this->generate_bmp_image_();
 
   // Publish temperature sensors to Home Assistant
   this->publish_sensors_();
 
-  // Mark image as ready for camera requests
+  // Mark image as ready
   this->image_ready_ = true;
   this->last_frame_time_ = millis();
 }
@@ -80,8 +130,7 @@ void MLX90640::update() {
 // ============================================================================
 
 void MLX90640::loop() {
-  // Nothing needed in loop for now
-  // All updates are handled in update() based on update_interval
+  // Nothing needed in loop
 }
 
 // ============================================================================
@@ -98,54 +147,17 @@ void MLX90640::dump_config() {
   ESP_LOGCONFIG(TAG, "  Min Temp: %.1f°C", this->mintemp_);
   ESP_LOGCONFIG(TAG, "  Max Temp: %.1f°C", this->maxtemp_);
   ESP_LOGCONFIG(TAG, "  Refresh Rate: 0x%02X", this->refresh_rate_);
-  ESP_LOGCONFIG(TAG, "  Camera Streaming: ENABLED");
 
   LOG_SENSOR("  ", "Min Temperature", this->min_temperature_sensor_);
   LOG_SENSOR("  ", "Max Temperature", this->max_temperature_sensor_);
   LOG_SENSOR("  ", "Mean Temperature", this->mean_temperature_sensor_);
   LOG_SENSOR("  ", "Median Temperature", this->median_temperature_sensor_);
-}
-
-// ============================================================================
-// Camera Interface - Request Image
-// ============================================================================
-
-void MLX90640::request_image(camera::Camera::RequestType type) {
-  ESP_LOGD(TAG, "Camera image requested (type: %d)", static_cast<int>(type));
   
-  // If we have a recent image, return it immediately
-  if (this->image_ready_ && (millis() - this->last_frame_time_ < 5000)) {
-    ESP_LOGV(TAG, "Using cached thermal image");
-    return;
+#ifdef USE_WEBSERVER
+  if (this->base_ != nullptr) {
+    ESP_LOGCONFIG(TAG, "  Web Server: Available at /thermal-camera");
   }
-
-  // Otherwise trigger a new update
-  ESP_LOGD(TAG, "Capturing new thermal frame");
-  this->image_ready_ = false;
-  this->update();
-}
-
-// ============================================================================
-// Camera Interface - Get Snapshot
-// ============================================================================
-
-camera::CameraImageData *MLX90640::get_snapshot() {
-  if (!this->image_ready_ || this->current_image_.empty()) {
-    ESP_LOGW(TAG, "No thermal image available for snapshot");
-    return nullptr;
-  }
-
-  ESP_LOGD(TAG, "Returning thermal snapshot (%d bytes)", this->current_image_.size());
-
-  // Create and return camera image data
-  // Note: CameraImageData will handle memory management
-  auto *image = new camera::CameraImageData(
-      this->current_image_.data(),
-      this->current_image_.size(),
-      camera::ImageType::IMAGE_TYPE_RGB24
-  );
-
-  return image;
+#endif
 }
 
 // ============================================================================
@@ -174,7 +186,7 @@ void MLX90640::read_thermal_data_() {
   // Calculate temperatures
   float vdd = MLX90640_GetVdd(frame, &this->mlx90640_);
   float ta = MLX90640_GetTa(frame, &this->mlx90640_);
-  float tr = ta - 8.0f;  // Reflected temperature (Ta - 8°C is typical)
+  float tr = ta - 8.0f;
   float emissivity = 0.95f;
 
   MLX90640_CalculateTo(frame, &this->mlx90640_, emissivity, tr, this->mlx90640To_);
@@ -183,17 +195,17 @@ void MLX90640::read_thermal_data_() {
 }
 
 // ============================================================================
-// Generate Camera Image (RGB24 format)
+// Generate BMP Image
 // ============================================================================
 
-void MLX90640::generate_camera_image_() {
-  const int width = 32;   // MLX90640 native resolution
+void MLX90640::generate_bmp_image_() {
+  const int width = 32;
   const int height = 24;
-  const int scale = 10;   // Upscale factor (320x240 final image)
+  const int scale = 10;  // 320x240 output
   const int scaled_width = width * scale;
   const int scaled_height = height * scale;
 
-  // Calculate min/max temperatures for normalization
+  // Calculate min/max temperatures
   this->min_value_ = this->mlx90640To_[0];
   this->max_value_ = this->mlx90640To_[0];
 
@@ -203,94 +215,109 @@ void MLX90640::generate_camera_image_() {
     if (temp > this->max_value_) this->max_value_ = temp;
   }
 
-  // Clamp to configured range if specified
+  // Clamp to configured range
   if (this->min_value_ < this->mintemp_) this->min_value_ = this->mintemp_;
   if (this->max_value_ > this->maxtemp_) this->max_value_ = this->maxtemp_;
 
   float temp_range = this->max_value_ - this->min_value_;
-  if (temp_range < 1.0f) temp_range = 1.0f;  // Avoid division by zero
+  if (temp_range < 1.0f) temp_range = 1.0f;
 
-  // Allocate RGB24 image buffer (3 bytes per pixel)
-  size_t image_size = scaled_width * scaled_height * 3;
-  this->current_image_.resize(image_size);
-
-  ESP_LOGV(TAG, "Generating %dx%d thermal image (temp range: %.1f-%.1f°C)",
-           scaled_width, scaled_height, this->min_value_, this->max_value_);
-
-  // Generate scaled thermal image with color mapping
+  // BMP header (54 bytes) + pixel data (320x240x3)
+  const int row_size = ((scaled_width * 3 + 3) / 4) * 4;  // Row must be multiple of 4
+  const int pixel_data_size = row_size * scaled_height;
+  const int file_size = 54 + pixel_data_size;
+  
+  this->current_image_.resize(file_size);
+  uint8_t *data = this->current_image_.data();
+  
+  // BMP File Header (14 bytes)
+  data[0] = 'B'; data[1] = 'M';  // Signature
+  memcpy(&data[2], &file_size, 4);  // File size
+  data[6] = 0; data[7] = 0;  // Reserved
+  data[8] = 0; data[9] = 0;  // Reserved
+  uint32_t pixel_offset = 54;
+  memcpy(&data[10], &pixel_offset, 4);  // Pixel data offset
+  
+  // BMP Info Header (40 bytes)
+  uint32_t header_size = 40;
+  memcpy(&data[14], &header_size, 4);
+  memcpy(&data[18], &scaled_width, 4);
+  memcpy(&data[22], &scaled_height, 4);
+  uint16_t planes = 1;
+  memcpy(&data[26], &planes, 2);
+  uint16_t bits_per_pixel = 24;
+  memcpy(&data[28], &bits_per_pixel, 2);
+  uint32_t compression = 0;
+  memcpy(&data[30], &compression, 4);
+  memcpy(&data[34], &pixel_data_size, 4);
+  uint32_t ppm = 2835;  // 72 DPI
+  memcpy(&data[38], &ppm, 4);  // X pixels per meter
+  memcpy(&data[42], &ppm, 4);  // Y pixels per meter
+  uint32_t colors = 0;
+  memcpy(&data[46], &colors, 4);
+  memcpy(&data[50], &colors, 4);
+  
+  // Generate pixel data (BMP is bottom-up)
   for (int y = 0; y < height; y++) {
     for (int x = 0; x < width; x++) {
-      // Get temperature value
       int idx = y * width + x;
       float temp = this->mlx90640To_[idx];
-
-      // Normalize to 0-1 range
       float normalized = (temp - this->min_value_) / temp_range;
       if (normalized < 0.0f) normalized = 0.0f;
       if (normalized > 1.0f) normalized = 1.0f;
-
-      // Apply thermal color map
+      
       uint8_t r, g, b;
       this->apply_color_map_(normalized, r, g, b);
-
-      // Scale up the pixel (10x10 block for each thermal pixel)
+      
+      // Scale and write pixels (bottom-up)
       for (int sy = 0; sy < scale; sy++) {
         for (int sx = 0; sx < scale; sx++) {
-          int scaled_x = x * scale + sx;
-          int scaled_y = y * scale + sy;
-          int pixel_idx = (scaled_y * scaled_width + scaled_x) * 3;
-
-          this->current_image_[pixel_idx + 0] = r;
-          this->current_image_[pixel_idx + 1] = g;
-          this->current_image_[pixel_idx + 2] = b;
+          int bmp_y = (scaled_height - 1) - (y * scale + sy);  // Flip vertically
+          int bmp_x = x * scale + sx;
+          int pixel_offset = 54 + (bmp_y * row_size) + (bmp_x * 3);
+          
+          data[pixel_offset + 0] = b;  // BMP is BGR
+          data[pixel_offset + 1] = g;
+          data[pixel_offset + 2] = r;
         }
       }
     }
   }
 
-  ESP_LOGV(TAG, "Thermal image generation complete");
+  ESP_LOGV(TAG, "Generated BMP image: %dx%d, %.1f-%.1f°C",
+           scaled_width, scaled_height, this->min_value_, this->max_value_);
 }
 
 // ============================================================================
-// Apply Thermal Color Map (Ironbow style)
+// Apply Thermal Color Map
 // ============================================================================
 
 void MLX90640::apply_color_map_(float value, uint8_t &r, uint8_t &g, uint8_t &b) {
-  // Clamp value to 0-1
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
 
-  // Ironbow thermal colormap
-  // Cold (0.0) = Dark Blue
-  // Medium (0.5) = Green/Yellow  
-  // Hot (1.0) = Red/White
-
+  // Ironbow colormap
   if (value < 0.2f) {
-    // Dark blue to blue
     float t = value * 5.0f;
     r = 0;
     g = 0;
     b = static_cast<uint8_t>(100 + t * 155);
   } else if (value < 0.4f) {
-    // Blue to cyan
     float t = (value - 0.2f) * 5.0f;
     r = 0;
     g = static_cast<uint8_t>(t * 255);
     b = 255;
   } else if (value < 0.6f) {
-    // Cyan to green
     float t = (value - 0.4f) * 5.0f;
     r = 0;
     g = 255;
     b = static_cast<uint8_t>((1.0f - t) * 255);
   } else if (value < 0.8f) {
-    // Green to yellow to orange
     float t = (value - 0.6f) * 5.0f;
     r = static_cast<uint8_t>(t * 255);
     g = 255;
     b = 0;
   } else {
-    // Orange to red to white (hottest)
     float t = (value - 0.8f) * 5.0f;
     r = 255;
     g = static_cast<uint8_t>(255 - t * 100);
@@ -303,36 +330,29 @@ void MLX90640::apply_color_map_(float value, uint8_t &r, uint8_t &g, uint8_t &b)
 // ============================================================================
 
 void MLX90640::publish_sensors_() {
-  // Publish min temperature
   if (this->min_temperature_sensor_ != nullptr) {
     this->min_temperature_sensor_->publish_state(this->min_value_);
   }
 
-  // Publish max temperature
   if (this->max_temperature_sensor_ != nullptr) {
     this->max_temperature_sensor_->publish_state(this->max_value_);
   }
 
-  // Calculate and publish mean temperature
   if (this->mean_temperature_sensor_ != nullptr) {
     float sum = 0.0f;
     for (int i = 0; i < 768; i++) {
       sum += this->mlx90640To_[i];
     }
-    float mean = sum / 768.0f;
-    this->mean_temperature_sensor_->publish_state(mean);
+    this->mean_temperature_sensor_->publish_state(sum / 768.0f);
   }
 
-  // Calculate and publish median temperature
   if (this->median_temperature_sensor_ != nullptr) {
-    // Copy array for sorting
     std::vector<float> temps(this->mlx90640To_, this->mlx90640To_ + 768);
     std::sort(temps.begin(), temps.end());
-    float median = temps[384];  // Middle value of 768 elements
-    this->median_temperature_sensor_->publish_state(median);
+    this->median_temperature_sensor_->publish_state(temps[384]);
   }
 
-  ESP_LOGV(TAG, "Published sensor values - Min: %.1f°C, Max: %.1f°C",
+  ESP_LOGV(TAG, "Published sensors - Min: %.1f°C, Max: %.1f°C",
            this->min_value_, this->max_value_);
 }
 
