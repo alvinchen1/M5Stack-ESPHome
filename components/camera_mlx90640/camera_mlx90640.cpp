@@ -1,17 +1,15 @@
 #include "camera_mlx90640.h"
 #include "mlx90640_image.h"
 #include "SPIFFS.h"
-#include "esphome/components/web_server/web_server.h"
-#include "esphome/core/log.h"
-#include <memory>
-#include <type_traits>
-#include <string>
-#include <vector>
 
-uint8_t MLX90640_address = 0x33;
-#define TA_SHIFT 8
-#define COLS 32
-#define ROWS 24
+
+uint8_t MLX90640_address = 0x33;  // Default 7-bit unshifted address of the
+                                     // MLX90640.  MLX90640的默认7位未移位地址
+#define TA_SHIFT \
+    8  // Default shift for MLX90640 in open air.  MLX90640在户外的默认移位
+
+#define COLS   32
+#define ROWS   24
 #define COLS_2 (COLS * 2)
 #define ROWS_2 (ROWS * 2)
 
@@ -19,32 +17,36 @@ float pixelsArraySize = COLS * ROWS;
 float pixels[COLS * ROWS];
 float pixels_2[COLS_2 * ROWS_2];
 float reversePixels[COLS * ROWS];
-uint16_t pixels_colored[ROWS][COLS];
-byte speed_setting = 2;
+uint16_t pixels_colored [ROWS][COLS] ;
+byte speed_setting = 2;  // High is 1 , Low is 2
 bool reverseScreen = false;
 
 #define INTERPOLATED_COLS 32
 #define INTERPOLATED_ROWS 32
-
-static const char *TAG = "MLX90640";
-
+static const char * TAG = "MLX90640" ;
 static float mlx90640To[COLS * ROWS];
 paramsMLX90640 mlx90640;
-
 float signedMag12ToFloat(uint16_t val);
-bool dataValid = false;
-float medianTemp;
-float meanTemp;
+bool dataValid = false ;
+float medianTemp ;
+float meanTemp ;
 
-int MINTEMP = 24;
-float min_v = 24;
-int min_cam_v = -40;
 
-int MAXTEMP = 35;
-float max_v = 35;
-int max_cam_v = 300;
+
+// low range of the sensor (this will be blue on the screen).
+// 传感器的低量程(屏幕上显示为蓝色)
+int MINTEMP   = 24;   // For color mapping.  颜色映射
+float min_v     = 24;   // Value of current min temp.  当前最小温度的值
+int min_cam_v = -40;  // Spec in datasheet.  规范的数据表
+
+// high range of the sensor (this will be red on the screen).
+// 传感器的高量程(屏幕上显示为红色)
+int MAXTEMP      = 35;   // For color mapping.  颜色映射
+float max_v        = 35;   // Value of current max temp.  当前最大温度值
+int max_cam_v    = 300;  // Spec in datasheet.  规范的数据表
 int resetMaxTemp = 45;
 
+// the colors we will be using.  我们将要使用的颜色
 const uint16_t camColors[] = {
     0x480F, 0x400F, 0x400F, 0x400F, 0x4010, 0x3810, 0x3810, 0x3810, 0x3810,
     0x3010, 0x3010, 0x3010, 0x2810, 0x2810, 0x2810, 0x2810, 0x2010, 0x2010,
@@ -77,253 +79,364 @@ const uint16_t camColors[] = {
     0xF060, 0xF040, 0xF020, 0xF800,
 };
 
-std::string payload;
-long loopTime, startTime, endTime, fps;
+std::string payload ;
 
+long loopTime, startTime, endTime, fps;
 float get_point(float *p, uint8_t rows, uint8_t cols, int8_t x, int8_t y);
-void set_point(float *p, uint8_t rows, uint8_t cols, int8_t x, int8_t y, float f);
-void get_adjacents_1d(float *src, float *dest, uint8_t rows, uint8_t cols, int8_t x, int8_t y);
-void get_adjacents_2d(float *src, float *dest, uint8_t rows, uint8_t cols, int8_t x, int8_t y);
+void set_point(float *p, uint8_t rows, uint8_t cols, int8_t x, int8_t y,
+               float f);
+void get_adjacents_1d(float *src, float *dest, uint8_t rows, uint8_t cols,
+                      int8_t x, int8_t y);
+void get_adjacents_2d(float *src, float *dest, uint8_t rows, uint8_t cols,
+                      int8_t x, int8_t y);
 float cubicInterpolate(float p[], float x);
 float bicubicInterpolate(float p[], float x, float y);
-void interpolate_image(float *src, uint8_t src_rows, uint8_t src_cols, float *dest, uint8_t dest_rows, uint8_t dest_cols);
-void drawpixels(float *p, uint8_t rows, uint8_t cols, uint8_t boxWidth, uint8_t boxHeight, boolean showVal);
+void interpolate_image(float *src, uint8_t src_rows, uint8_t src_cols,
+                       float *dest, uint8_t dest_rows, uint8_t dest_cols);
+void drawpixels(float *p, uint8_t rows, uint8_t cols, uint8_t boxWidth,uint8_t boxHeight, boolean showVal);
 
-namespace esphome {
-namespace mlx90640_app {
+namespace esphome{
+    namespace mlx90640_app{
+        MLX90640::MLX90640(web_server_base::WebServerBase *base): base_(base){
 
-// Helper: detect .get() member (std::shared_ptr-like)
-template <typename T, typename = void>
-struct has_get_member : std::false_type {};
+        }
+        void MLX90640::setup(){
+            // Initialize the the sensor data 
+                ESP_LOGI(TAG, "SDA PIN %d ", this->sda_);
+                ESP_LOGI(TAG, "SCL PIN %d ", this->scl_);
+                ESP_LOGI(TAG, "I2C Frequency %d",  this->frequency_);
+                ESP_LOGI(TAG, "Address %d ", this->addr_);
+                MLX90640_address = this->addr_ ;
+                MINTEMP = this->mintemp_ ;
+                MAXTEMP = this->maxtemp_ ;
+                
+                ESP_LOGI(TAG, "Color MinTemp %d ", MINTEMP);
+                ESP_LOGI(TAG, "Color MaxTemp %d ", MAXTEMP);
+                Wire.begin((int)this->sda_, (int)this->scl_, (uint32_t)this->frequency_);
+                Wire.setClock(this->frequency_);  // Increase I2C clock speed to 400kHz. 增加I2C时钟速度到400kHz
+                MLX90640_I2CInit(&Wire);
+                int status;
+                uint16_t eeMLX90640[832];  // 32 * 24 = 768
+                if(MLX90640_isConnected(MLX90640_address)){
+                status = MLX90640_DumpEE(MLX90640_address, eeMLX90640);
+                if (status != 0) 
+                ESP_LOGE(TAG,"Failed to load system parameters");
 
-template <typename T>
-struct has_get_member<T, std::void_t<decltype(std::declval<T>().get())>> : std::true_type {};
+                status = MLX90640_ExtractParameters(eeMLX90640, &mlx90640);
+                if (status != 0)  ESP_LOGE(TAG,"Parameter extraction failed");
+                
+                int SetRefreshRate;
+                // Setting MLX90640 device at slave address 0x33 to work with 16Hz refresh
+                // rate: 设置从地址0x33的MLX90640设备以16Hz刷新率工作:
+                // 0x00 – 0.5Hz
+                // 0x01 – 1Hz
+                // 0x02 – 2Hz
+                // 0x03 – 4Hz
+                // 0x04 – 8Hz // OK
+                // 0x05 – 16Hz // OK
+                // 0x06 – 32Hz // Fail
+                // 0x07 – 64Hz
+                if(this->refresh_rate_){
+                  SetRefreshRate = MLX90640_SetRefreshRate(0x33, this->refresh_rate_);
+                  if(this->refresh_rate_==0x05){
+                      ESP_LOGI(TAG, "Refresh rate set to 16Hz ");
 
-// Extract raw pointer when get_server() returns a raw pointer
-template <typename T>
-auto extract_raw_ptr_impl(T ptr, std::enable_if_t<std::is_pointer<T>::value, int> = 0) -> decltype(ptr) {
-  return ptr;
-}
+                  }else if(this->refresh_rate_==0x04){
+                    ESP_LOGI(TAG, "Refresh rate set to 8Hz ");
+                  }else{
+                    ESP_LOGI(TAG, "Refresh rate Not Valid ");
+                    SetRefreshRate = MLX90640_SetRefreshRate(0x33, 0x05);
+                  }
+                  
+                }else{
+                  SetRefreshRate = MLX90640_SetRefreshRate(0x33, 0x05);
+                  ESP_LOGI(TAG, "Refresh rate set to 16Hz ");
+                }
+                
+                // Once params are extracted, we can release eeMLX90640 array.
+                // 一旦提取了参数，我们就可以释放eeMLX90640数组
+                }else{
+                    ESP_LOGE(TAG, "The sensor is not connected");
+                }
+                // Display bottom side colorList and info.  显示底部的颜色列表和信息
 
-// Extract raw pointer when get_server() returns shared_ptr-like
-template <typename T>
-auto extract_raw_ptr_impl(T sp, std::enable_if_t<has_get_member<T>::value, int> = 0) -> decltype(sp.get()) {
-  return sp.get();
-}
+                if(!SPIFFS.begin(true)){
+                    ESP_LOGE(TAG,"An Error has occurred while mounting SPIFFS");
+                }
 
-// Fallback: unknown type -> return nullptr
-template <typename T>
-void *extract_raw_ptr_impl(T, ...) {
-  return nullptr;
-}
+                
+                // Register as a handler for the web server
+                this->base_->add_handler(this);
+        }
 
-template <typename T>
-auto extract_raw_ptr(T t) {
-  return extract_raw_ptr_impl(t);
-}
+        void MLX90640::handleRequest(AsyncWebServerRequest *req) {
+            File bmpFile = SPIFFS.open(ESPHOME_F("/thermal.bmp"), ESPHOME_F("r"));
+            if (!bmpFile) {
+                ESP_LOGE("thermal_bmp", "File not found: /thermal.bmp");
+                req->send(404, ESPHOME_F("text/plain"), ESPHOME_F("File not found"));
+                return;
+            }
 
-// Read whole file into string (binary-safe)
-static std::vector<uint8_t> read_file_binary(const char *path) {
-  std::vector<uint8_t> out;
-  if (!SPIFFS.exists(path)) return out;
-  File f = SPIFFS.open(path, FILE_READ);
-  if (!f) return out;
-  size_t sz = (size_t)f.size();
-  out.reserve(sz);
-  while (f.available()) {
-    out.push_back((uint8_t)f.read());
-  }
-  f.close();
-  return out;
-}
+            static uint8_t buffer[3072];
+            size_t len = 0;
+            if (bmpFile.available()) {
+                len = bmpFile.read(buffer, sizeof(buffer));
+            }
+            AsyncWebServerResponse *response = req->beginResponse(200, ESPHOME_F("image/bmp"), buffer, len);
+            response->addHeader(ESPHOME_F("Content-Disposition"), ESPHOME_F("inline; filename=thermal.bmp"));
 
-MLX90640::MLX90640(web_server_base::WebServerBase *base): base_(base) {
-}
+            bmpFile.close();
+            req->send(response);
+        }
 
-void MLX90640::setup() {
-  ESP_LOGI(TAG, "SDA PIN %d ", this->sda_);
-  ESP_LOGI(TAG, "SCL PIN %d ", this->scl_);
-  ESP_LOGI(TAG, "I2C Frequency %d", this->frequency_);
-  ESP_LOGI(TAG, "Address %d ", this->addr_);
-  MLX90640_address = this->addr_;
-  MINTEMP = this->mintemp_;
-  MAXTEMP = this->maxtemp_;
-  ESP_LOGI(TAG, "Color MinTemp %d ", MINTEMP);
-  ESP_LOGI(TAG, "Color MaxTemp %d ", MAXTEMP);
+        void MLX90640::filter_outlier_pixel(float *pixels_ , int pixel_size , float level){
+            for(int i=1 ; i<pixel_size -1 ; i++){
+                if(abs(pixels_[i]-pixels_[i-1])>= level && abs((pixels_[i]-pixels_[i+1]))>= level ){
+                    pixels_[i] = (pixels_[i-1] + pixels_[i+1])/2.0 ;
+                }
+            }
+            // Check the zero index pixel
+            if(abs(pixels_[0]-pixels_[1])>=level && abs(pixels_[0]-pixels_[2])>=level){
+                pixels_[0] = (pixels_[1] +pixels_[2])/2.0 ;
+            }
+            // Check the zero index pixel
+            if(abs(pixels_[pixel_size-1]-pixels_[pixel_size-2])>=level && abs(pixels_[pixel_size-1]-pixels_[pixel_size-3])>=level){
+                pixels_[0] = (pixels_[pixel_size-2] +pixels_[pixel_size-3])/2.0 ;
+            }
+        }
 
-  Wire.begin((int)this->sda_, (int)this->scl_, (uint32_t)this->frequency_);
-  Wire.setClock(this->frequency_);
-  MLX90640_I2CInit(&Wire);
+        void MLX90640::update()
+        {
+              loopTime  = millis();
+              startTime = loopTime;
+           //this->pixel_data_->publish_state(payload);
+           if(dataValid)
+           {
+                this->min_temperature_sensor_->publish_state(min_v);
+                this->max_temperature_sensor_->publish_state(max_v);
+                this->mean_temperature_sensor_->publish_state(meanTemp);
+                this->median_temperature_sensor_->publish_state(medianTemp);
+           }
+           
+           if(MLX90640_isConnected(MLX90640_address)){
+                   this->mlx_update();
+           }else{
+            ESP_LOGE(TAG, "The sensor is not connected");
+               for(int i=0; i<32*24; i++){
+                if(i%2==0){
+                    pixels[i] = 64;
+                }
+                if(i%3==0){
+                    pixels[i] = 128;
+                }
+                if(i%5==0){
+                    pixels[i] = 255;
+                }
 
-  int status;
-  uint16_t eeMLX90640[832];
+                if(i%5==0){
+                    pixels[i] = 1024;
+                }
+               }
+               ThermalImageToWeb(pixels,camColors,  min_v,  max_v); 
+           }
 
-  if (MLX90640_isConnected(MLX90640_address)) {
-    status = MLX90640_DumpEE(MLX90640_address, eeMLX90640);
-    if (status != 0) ESP_LOGE(TAG, "Failed to load system parameters");
-    status = MLX90640_ExtractParameters(eeMLX90640, &mlx90640);
-    if (status != 0) ESP_LOGE(TAG, "Parameter extraction failed");
-    int SetRefreshRate;
-    if (this->refresh_rate_) {
-      SetRefreshRate = MLX90640_SetRefreshRate(0x33, this->refresh_rate_);
-      if (this->refresh_rate_ == 0x05) {
-        ESP_LOGI(TAG, "Refresh rate set to 16Hz ");
-      } else if (this->refresh_rate_ == 0x04) {
-        ESP_LOGI(TAG, "Refresh rate set to 8Hz ");
-      } else {
-        ESP_LOGI(TAG, "Refresh rate Not Valid ");
-        SetRefreshRate = MLX90640_SetRefreshRate(0x33, 0x05);
+        }
+
+
+      void MLX90640::mlx_update(){
+            for (byte x = 0; x < speed_setting; x++)  // x < 2 Read both subpages
+            {
+                uint16_t mlx90640Frame[834];
+                int status = MLX90640_GetFrameData(MLX90640_address, mlx90640Frame);
+                if (status < 0) {
+                ESP_LOGE(TAG,"GetFrame Error: %d",status);
+                }
+
+                float vdd = MLX90640_GetVdd(mlx90640Frame, &mlx90640);
+                float Ta  = MLX90640_GetTa(mlx90640Frame, &mlx90640);
+                float tr = Ta - TA_SHIFT;  // Reflected temperature based on the sensor ambient
+                                    // temperature.  根据传感器环境温度反射温度
+                float emissivity = 0.95;
+               MLX90640_CalculateTo(mlx90640Frame, &mlx90640, emissivity, tr, pixels);  // save pixels temp to array (pixels).
+                                            // 保存像素temp到数组(像素)
+                int mode_ = MLX90640_GetCurMode(MLX90640_address);
+                // amendment.  修正案
+                MLX90640_BadPixelsCorrection((&mlx90640)->brokenPixels, pixels, mode_, &mlx90640);
+            }
+
+                filter_outlier_pixel(pixels,sizeof(pixels) / sizeof(pixels[0]), this->filter_level_ );
+              //medianTemp = (mlx90640To[165]+mlx90640To[180]+mlx90640To[176]+mlx90640To[192]) / 4.0;  // Temp in Center - based on 4 pixels
+                medianTemp = (pixels[165]+pixels[180]+pixels[176]+pixels[192]) / 4.0;
+                max_v      = MINTEMP;
+                min_v      = MAXTEMP;
+                int spot_v = pixels[360];
+                spot_v     = pixels[768 / 2];
+                // while(1);
+                float total =0 ;
+                for (int itemp = 0; itemp < sizeof(pixels) / sizeof(pixels[0]); itemp++) {
+                    if (pixels[itemp] > max_v) {
+                        max_v = pixels[itemp];
+                    }
+                    if (pixels[itemp] < min_v) {
+                        min_v = pixels[itemp];
+                    }
+                    total += pixels[itemp] ;
+                }
+                meanTemp = total/((sizeof(pixels) / sizeof(pixels[0])));
+
+                 ThermalImageToWeb(pixels,camColors,  min_v,  max_v); // Save the image on the local files
+                if (max_v > max_cam_v | max_v < min_cam_v) {
+                    ESP_LOGE(TAG, "MLX READING VALUE ERRORS");
+                    dataValid = false ;
+                } else {
+                    ESP_LOGI(TAG, "Min temperature : %.2f C ",min_v);
+                    ESP_LOGI(TAG, "Max temperature : %.2f C ",max_v);
+                    ESP_LOGI(TAG, "Mean temperature : %.2f C ",meanTemp);
+                    ESP_LOGI(TAG, "Median temperature : %.2f C ",medianTemp);
+                    dataValid = true ;
+                }
+                loopTime = millis();
+                endTime  = loopTime;
+                fps      = 1000 / (endTime - startTime);
       }
-    } else {
-      SetRefreshRate = MLX90640_SetRefreshRate(0x33, 0x05);
-      ESP_LOGI(TAG, "Refresh rate set to 16Hz ");
+        
+        
+
     }
-  } else {
-    ESP_LOGE(TAG, "The sensor is not connected");
-  }
-
-  if (!SPIFFS.begin(true)) {
-    ESP_LOGE(TAG, "An Error has occurred while mounting SPIFFS");
-  }
-
-  // --- Robust registration: handle raw pointer or std::shared_ptr return from get_server()
-  if (this->base_ == nullptr) {
-    ESP_LOGW(TAG, "Web server base_ is null; cannot register HTTP handler");
-    return;
-  }
-
-  // get_server() may return either a raw pointer T* or a std::shared_ptr<T> (or another class with .get()).
-  auto server_any = this->base_->get_server();
-  void *raw_void = extract_raw_ptr(server_any);
-  AsyncWebServer *async_server = nullptr;
-
-  if (raw_void != nullptr) {
-    async_server = dynamic_cast<AsyncWebServer *>(static_cast<AsyncWebServer *>(raw_void));
-  }
-
-  // If async_server is available and valid, register AsyncWebServer-style handler.
-  if (async_server != nullptr) {
-    async_server->on("/thermal-camera", HTTP_GET, [](AsyncWebServerRequest *request) {
-      ESP_LOGI(TAG, "Received /thermal-camera request (AsyncWebServer)");
-      const char *path = "/thermal.bmp";
-      if (SPIFFS.exists(path)) {
-        // Prefer the SPIFFS overload on AsyncWebServerRequest when available
-        request->send(SPIFFS, path, "image/bmp");
-      } else {
-        request->send(404, "text/plain", "Thermal image not found");
-      }
-    });
-    ESP_LOGD(TAG, "Registered HTTP handler /thermal-camera (AsyncWebServer)");
-    return;
-  }
-
-  // If we reach here, the concrete server is not AsyncWebServer; attempt a generic handler using web_server_base request API.
-  ESP_LOGW(TAG, "AsyncWebServer not detected. Attempting web_server_idf-compatible handler fallback.");
-
-  // The web_server_idf request type differs. We'll register via the WebServerBase if possible using WebServerBase API.
-  // web_server_base::WebServerBase has add_handler / register endpoint hooks in some ESPHome versions,
-  // but to keep this file portable we will attempt to add a lambda via base_ if available.
-
-  // Try to access web_server_base API: if get_server() returned a shared_ptr to a concrete server that exposes add_handler,
-  // or if the WebServerBase provides a method to add handlers, that would be used. ESPHome's web_server_idf exposes different types,
-  // so rather than attempt fragile compile-time calls, we instead log that the component currently only supports AsyncWebServer
-  // for clean static SPIFFS streaming and recommend switching YAML to 'web_server:' backend.
-  ESP_LOGW(TAG, "No portable web_server_idf handler implemented here. To enable /thermal-camera endpoint, use 'web_server:' (ESPAsyncWebServer) in YAML or implement web_server_idf handler in this component.");
 }
 
-void MLX90640::filter_outlier_pixel(float *pixels_, int pixel_size, float level) {
-  for (int i = 1; i < pixel_size - 1; i++) {
-    if (abs(pixels_[i] - pixels_[i - 1]) >= level && abs((pixels_[i] - pixels_[i + 1])) >= level) {
-      pixels_[i] = (pixels_[i - 1] + pixels_[i + 1]) / 2.0;
-    }
-  }
 
-  if (abs(pixels_[0] - pixels_[1]) >= level && abs(pixels_[0] - pixels_[2]) >= level) {
-    pixels_[0] = (pixels_[1] + pixels_[2]) / 2.0;
-  }
 
-  if (abs(pixels_[pixel_size - 1] - pixels_[pixel_size - 2]) >= level && abs(pixels_[pixel_size - 1] - pixels_[pixel_size - 3]) >= level) {
-    pixels_[0] = (pixels_[pixel_size - 2] + pixels_[pixel_size - 3]) / 2.0;
-  }
+float get_point(float *p, uint8_t rows, uint8_t cols, int8_t x, int8_t y) {
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x >= cols) x = cols - 1;
+    if (y >= rows) y = rows - 1;
+    return p[y * cols + x];
 }
 
-void MLX90640::update() {
-  loopTime = millis();
-  startTime = loopTime;
-
-  if (dataValid) {
-    this->min_temperature_sensor_->publish_state(min_v);
-    this->max_temperature_sensor_->publish_state(max_v);
-    this->mean_temperature_sensor_->publish_state(meanTemp);
-    this->median_temperature_sensor_->publish_state(medianTemp);
-  }
-
-  if (MLX90640_isConnected(MLX90640_address)) {
-    this->mlx_update();
-  } else {
-    ESP_LOGE(TAG, "The sensor is not connected");
-    for (int i = 0; i < 32 * 24; i++) {
-      if (i % 2 == 0) { pixels[i] = 64; }
-      if (i % 3 == 0) { pixels[i] = 128; }
-      if (i % 5 == 0) { pixels[i] = 255; }
-      if (i % 5 == 0) { pixels[i] = 1024; }
-    }
-    ThermalImageToWeb(pixels, camColors, min_v, max_v);
-  }
+void set_point(float *p, uint8_t rows, uint8_t cols, int8_t x, int8_t y,
+               float f) {
+    if ((x < 0) || (x >= cols)) return;
+    if ((y < 0) || (y >= rows)) return;
+    p[y * cols + x] = f;
 }
 
-void MLX90640::mlx_update() {
-  for (byte x = 0; x < speed_setting; x++) {
-    uint16_t mlx90640Frame[834];
-    int status = MLX90640_GetFrameData(MLX90640_address, mlx90640Frame);
-    if (status < 0) {
-      ESP_LOGE(TAG, "GetFrame Error: %d", status);
+// src is a grid src_rows * src_cols
+// dest is a pre-allocated grid, dest_rows*dest_cols
+void interpolate_image(float *src, uint8_t src_rows, uint8_t src_cols,
+                       float *dest, uint8_t dest_rows, uint8_t dest_cols) {
+    float mu_x = (src_cols - 1.0) / (dest_cols - 1.0);
+    float mu_y = (src_rows - 1.0) / (dest_rows - 1.0);
+
+    float adj_2d[16];  // matrix for storing adjacents
+
+    for (uint8_t y_idx = 0; y_idx < dest_rows; y_idx++) {
+        for (uint8_t x_idx = 0; x_idx < dest_cols; x_idx++) {
+            float x = x_idx * mu_x;
+            float y = y_idx * mu_y;
+            // Serial.print("("); Serial.print(y_idx); Serial.print(", ");
+            // Serial.print(x_idx); Serial.print(") = "); Serial.print("(");
+            // Serial.print(y); Serial.print(", "); Serial.print(x);
+            // Serial.print(") = ");
+            get_adjacents_2d(src, adj_2d, src_rows, src_cols, x, y);
+            /*
+            Serial.print("[");
+            for (uint8_t i=0; i<16; i++) {
+              Serial.print(adj_2d[i]); Serial.print(", ");
+            }
+            Serial.println("]");
+            */
+            float frac_x =
+                x - (int)x;  // we only need the ~delta~ between the points
+            float frac_y =
+                y - (int)y;  // we only need the ~delta~ between the points
+            float out = bicubicInterpolate(adj_2d, frac_x, frac_y);
+            // Serial.print("\tInterp: "); Serial.println(out);
+            set_point(dest, dest_rows, dest_cols, x_idx, y_idx, out);
+        }
     }
-
-    float vdd = MLX90640_GetVdd(mlx90640Frame, &mlx90640);
-    float Ta = MLX90640_GetTa(mlx90640Frame, &mlx90640);
-    float tr = Ta - TA_SHIFT;
-    float emissivity = 0.95;
-    MLX90640_CalculateTo(mlx90640Frame, &mlx90640, emissivity, tr, pixels);
-
-    int mode_ = MLX90640_GetCurMode(MLX90640_address);
-    MLX90640_BadPixelsCorrection((&mlx90640)->brokenPixels, pixels, mode_, &mlx90640);
-  }
-
-  filter_outlier_pixel(pixels, sizeof(pixels) / sizeof(pixels[0]), this->filter_level_);
-
-  medianTemp = (pixels[165] + pixels[180] + pixels[176] + pixels[192]) / 4.0;
-
-  max_v = MINTEMP;
-  min_v = MAXTEMP;
-  int spot_v = pixels[360];
-  spot_v = pixels[768 / 2];
-
-  float total = 0;
-  for (int itemp = 0; itemp < sizeof(pixels) / sizeof(pixels[0]); itemp++) {
-    if (pixels[itemp] > max_v) { max_v = pixels[itemp]; }
-    if (pixels[itemp] < min_v) { min_v = pixels[itemp]; }
-    total += pixels[itemp];
-  }
-
-  meanTemp = total / ((sizeof(pixels) / sizeof(pixels[0])));
-  ThermalImageToWeb(pixels, camColors, min_v, max_v);
-
-  if (max_v > max_cam_v | max_v < min_cam_v) {
-    ESP_LOGE(TAG, "MLX READING VALUE ERRORS");
-    dataValid = false;
-  } else {
-    ESP_LOGI(TAG, "Min temperature : %.2f C ", min_v);
-    ESP_LOGI(TAG, "Max temperature : %.2f C ", max_v);
-    ESP_LOGI(TAG, "Mean temperature : %.2f C ", meanTemp);
-    ESP_LOGI(TAG, "Median temperature : %.2f C ", medianTemp);
-    dataValid = true;
-  }
-
-  loopTime = millis();
-  endTime = loopTime;
-  fps = 1000 / (endTime - startTime);
 }
 
-}  // namespace mlx90640_app
-}  // namespace esphome
+// p is a list of 4 points, 2 to the left, 2 to the right
+float cubicInterpolate(float p[], float x) {
+    float r = p[1] + (0.5 * x *
+                      (p[2] - p[0] +
+                       x * (2.0 * p[0] - 5.0 * p[1] + 4.0 * p[2] - p[3] +
+                            x * (3.0 * (p[1] - p[2]) + p[3] - p[0]))));
+    /*
+      Serial.print("interpolating: [");
+      Serial.print(p[0],2); Serial.print(", ");
+      Serial.print(p[1],2); Serial.print(", ");
+      Serial.print(p[2],2); Serial.print(", ");
+      Serial.print(p[3],2); Serial.print("] w/"); Serial.print(x);
+      Serial.print(" = "); Serial.println(r);
+    */
+    return r;
+}
+
+// p is a 16-point 4x4 array of the 2 rows & columns left/right/above/below
+float bicubicInterpolate(float p[], float x, float y) {
+    float arr[4] = {0, 0, 0, 0};
+    arr[0]       = cubicInterpolate(p + 0, x);
+    arr[1]       = cubicInterpolate(p + 4, x);
+    arr[2]       = cubicInterpolate(p + 8, x);
+    arr[3]       = cubicInterpolate(p + 12, x);
+    return cubicInterpolate(arr, y);
+}
+
+// src is rows*cols and dest is a 4-point array passed in already allocated!
+void get_adjacents_1d(float *src, float *dest, uint8_t rows, uint8_t cols,
+                      int8_t x, int8_t y) {
+    // Serial.print("("); Serial.print(x); Serial.print(", "); Serial.print(y);
+    // Serial.println(")");
+    // pick two items to the left
+    dest[0] = get_point(src, rows, cols, x - 1, y);
+    dest[1] = get_point(src, rows, cols, x, y);
+    // pick two items to the right
+    dest[2] = get_point(src, rows, cols, x + 1, y);
+    dest[3] = get_point(src, rows, cols, x + 2, y);
+}
+
+// src is rows*cols and dest is a 16-point array passed in already allocated!
+void get_adjacents_2d(float *src, float *dest, uint8_t rows, uint8_t cols,
+                      int8_t x, int8_t y) {
+    // Serial.print("("); Serial.print(x); Serial.print(", "); Serial.print(y);
+    // Serial.println(")");
+    float arr[4];
+    for (int8_t delta_y = -1; delta_y < 3; delta_y++) {  // -1, 0, 1, 2
+        float *row = dest + 4 * (delta_y + 1);  // index into each chunk of 4
+        for (int8_t delta_x = -1; delta_x < 3; delta_x++) {  // -1, 0, 1, 2
+            row[delta_x + 1] =
+                get_point(src, rows, cols, x + delta_x, y + delta_y);
+        }
+    }
+}
+
+
+void drawpixels(float *p, uint8_t rows, uint8_t cols, uint8_t boxWidth,uint8_t boxHeight, boolean showVal) {
+    int colorTemp;
+    for (int y = 0; y < rows; y++) {
+        for (int x = 0; x < cols; x++) {
+            float val = get_point(p, rows, cols, x, y);
+            payload += val ;
+            if (val >= MAXTEMP)
+                colorTemp = MAXTEMP;
+            else if (val <= MINTEMP)
+                colorTemp = MINTEMP;
+            else
+                colorTemp = val;
+
+            uint8_t colorIndex = map(colorTemp, MINTEMP, MAXTEMP, 0, 255);
+            colorIndex         = constrain(colorIndex, 0, 255);  // 0 ~ 255
+            // draw the pixels!
+            uint16_t color;
+            color = val * 2;
+            pixels_colored[x][y] = camColors[colorIndex];
+            //payload +=  camColors[colorIndex] ;
+            //payload +=  camColors[colorIndex] ;
+            //M5.Lcd.fillRect(boxWidth * x, boxHeight * y, boxWidth, boxHeight,
+            //                camColors[colorIndex]);
+        }
+    }
+}
