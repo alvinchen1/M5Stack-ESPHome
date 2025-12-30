@@ -1,10 +1,10 @@
 #pragma once
 
+#include "esphome/components/camera/camera.h"
 #include "esphome/components/i2c/i2c.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
-
 
 #ifdef USE_WEBSERVER
 #include "esphome/components/web_server_base/web_server_base.h"
@@ -50,12 +50,12 @@ public:
     this->refresh_rate_ = refresh_rate;
   }
 
-#ifdef USE_WEBSERVER
-  void set_base(web_server_base::WebServerBase *base) { this->base_ = base; }
-
-  // Method to get current image for web server
+  // Method to get current image for web server / camera
   std::vector<uint8_t> get_current_image() { return this->current_image_; }
   bool is_image_ready() { return this->image_ready_; }
+
+#ifdef USE_WEBSERVER
+  void set_base(web_server_base::WebServerBase *base) { this->base_ = base; }
 #endif
 
 protected:
@@ -93,6 +93,18 @@ protected:
   void publish_sensors_();
   void apply_color_map_(float normalized_value, uint8_t &r, uint8_t &g,
                         uint8_t &b);
+};
+
+class MLX90640Camera : public camera::Camera {
+public:
+  MLX90640Camera(MLX90640 *parent) : parent_(parent) {}
+  void setup() override;
+  void loop() override;
+  void callback(camera::CameraImageReader &reader,
+                camera::CameraImageReader::Callback callback) override;
+
+protected:
+  MLX90640 *parent_;
 };
 
 } // namespace mlx90640_app

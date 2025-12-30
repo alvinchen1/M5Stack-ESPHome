@@ -49,6 +49,25 @@ protected:
 };
 #endif
 
+void MLX90640Camera::setup() {
+  // Nothing to do
+}
+
+void MLX90640Camera::loop() {
+  // Nothing to do
+}
+
+void MLX90640Camera::callback(camera::CameraImageReader &reader,
+                              camera::CameraImageReader::Callback callback) {
+  if (!this->parent_->is_image_ready()) {
+    return;
+  }
+
+  std::vector<uint8_t> image = this->parent_->get_current_image();
+  reader.return_image(std::move(image));
+  callback(reader);
+}
+
 // ============================================================================
 // Setup
 // ============================================================================
