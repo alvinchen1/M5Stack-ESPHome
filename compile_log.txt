@@ -1,0 +1,10 @@
+INFO ESPHome 2025.10.4
+INFO Reading configuration c:\Storage\ESPhome\wrenstove-thermalcam.yaml...
+Failed config
+
+camera: [source c:\Storage\ESPhome\wrenstove-thermalcam.yaml:67]
+  
+  Component camera cannot be loaded via YAML (no CONFIG_SCHEMA).
+  - platform: camera_mlx90640
+    id: thermal_cam
+    camera_mlx90640_id: thermal_cam_hub
