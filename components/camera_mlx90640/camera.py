@@ -17,6 +17,8 @@ CONFIG_SCHEMA = camera.CAMERA_SCHEMA.extend(
     }
 )
 
+PLATFORM_SCHEMA = CONFIG_SCHEMA
+
 async def to_code(config):
     hub = await cg.get_variable(config[CONF_MLX90640_ID])
     var = cg.new_Pvariable(config[CONF_ID], hub)
