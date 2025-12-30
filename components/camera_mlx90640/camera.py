@@ -4,7 +4,7 @@ from esphome.components import camera
 from esphome.const import CONF_ID
 from . import MLX90640, mlx90640_ns
 
-DEPENDENCIES = ["camera_mlx90640"]
+
 
 CONF_MLX90640_ID = "camera_mlx90640_id"
 
