@@ -4,7 +4,6 @@ from esphome.components import sensor, i2c
 from esphome.const import (
     CONF_ID,
     CONF_ADDRESS,
-    CONF_FREQUENCY,
     DEVICE_CLASS_TEMPERATURE,
     STATE_CLASS_MEASUREMENT,
     UNIT_CELSIUS,
@@ -30,8 +29,6 @@ MLX90640 = mlx90640_ns.class_(
 )
 
 # Configuration keys
-CONF_SDA = "sda"
-CONF_SCL = "scl"
 CONF_MINTEMP = "mintemp"
 CONF_MAXTEMP = "maxtemp"
 CONF_REFRESH_RATE = "refresh_rate"
@@ -44,10 +41,6 @@ CONF_MEDIAN_TEMPERATURE = "median_temperature"
 BASE_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(MLX90640),
-        cv.Required(CONF_SDA): cv.int_,
-        cv.Required(CONF_SCL): cv.int_,
-        cv.Optional(CONF_FREQUENCY, default=400000): cv.int_,
-        cv.Optional(CONF_ADDRESS, default=0x33): cv.i2c_address,
         cv.Optional(CONF_MINTEMP, default=0): cv.float_,
         cv.Optional(CONF_MAXTEMP, default=80): cv.float_,
         cv.Optional(CONF_REFRESH_RATE, default=0x04): cv.hex_uint8_t,
@@ -101,10 +94,6 @@ async def to_code(config):
     await i2c.register_i2c_device(var, config)
 
     # Set pin configuration
-    cg.add(var.set_sda_pin(config[CONF_SDA]))
-    cg.add(var.set_scl_pin(config[CONF_SCL]))
-    cg.add(var.set_frequency(config[CONF_FREQUENCY]))
-    cg.add(var.set_address(config[CONF_ADDRESS]))
     cg.add(var.set_mintemp(config[CONF_MINTEMP]))
     cg.add(var.set_maxtemp(config[CONF_MAXTEMP]))
     cg.add(var.set_refresh_rate(config[CONF_REFRESH_RATE]))
