@@ -18,7 +18,7 @@ except ImportError:
     USE_WEBSERVER = False
 
 DEPENDENCIES = ["i2c"]
-AUTO_LOAD = ["sensor"]
+AUTO_LOAD = ["sensor", "camera"]
 
 # Component namespace
 mlx90640_ns = cg.esphome_ns.namespace("mlx90640_app")
