@@ -53,10 +53,10 @@ void MLX90614Component::update() {
 bool MLX90614Component::read_temperature_register_(uint8_t reg, float &out_celsius) {
   uint16_t raw = 0;
 
-  // ESPHome 2025+ I2C API:
-  // reg16() returns an I2CRegister16 object, then call read_value()
+  // ESPHome 2025.12.4 I2C API:
+  // reg16() returns an I2CRegister16 object, then call read()
   auto reg16_obj = this->reg16(reg);
-  auto err = reg16_obj.read_value(&raw);
+  auto err = reg16_obj.read(&raw);
 
   if (err != i2c::ERROR_OK) {
     ESP_LOGW(TAG, "I2C read error from reg 0x%02X: %d", reg, err);
