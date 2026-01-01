@@ -1,28 +1,30 @@
-#ifndef __MLX90640__
-#define __MLX90614__
-#pragma once 
-#include "esphome.h"
-#include <Wire.h>
-#include "Adafruit_MLX90614.h"
+#pragma once
+
+#include "esphome/core/component.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/i2c/i2c.h"
+
 namespace esphome {
-namespace mlx_90614{
-class MLX90614Sensor : public PollingComponent {
-    private:
-    Adafruit_MLX90614 mlx;
-    sensor::Sensor *ambient_temperature_sensor{nullptr};
-    sensor::Sensor *object_temperature_sensor{nullptr};
+namespace mlx90614 {
 
-  public:
+class MLX90614Component : public PollingComponent, public i2c::I2CDevice {
+ public:
+  sensor::Sensor *ambient_sensor{nullptr};
+  sensor::Sensor *object_sensor{nullptr};
 
-   // MLX90614Sensor() : PollingComponent(15000) { }
-    void set_ambient_temperature_sensor(sensor::Sensor *ts){this->ambient_temperature_sensor = ts ;}
-    void set_object_temperature_sensor(sensor::Sensor *ts){this->object_temperature_sensor = ts ;}
-    void setup() override ;
-    void update() override;
+  bool diagnostic_mode{false};
+
+  void setup() override;
+  void dump_config() override;
+  void update() override;
+
+  void set_ambient_sensor(sensor::Sensor *s) { this->ambient_sensor = s; }
+  void set_object_sensor(sensor::Sensor *s) { this->object_sensor = s; }
+  void set_diagnostic_mode(bool v) { this->diagnostic_mode = v; }
+
+ protected:
+  bool read_temperature_register_(uint8_t reg, float &out_celsius);
 };
 
-}
-}
-
-#endif
+}  // namespace mlx90614
+}  // namespace esphome

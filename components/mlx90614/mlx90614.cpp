@@ -1,53 +1,73 @@
-#include "esphome.h"
-#include <Wire.h>
-#include "Adafruit_MLX90614.h"
-
-#define TAG "mlx90614"
-#define SENSOR_READ_RETRIES 5
+#include "mlx90614.h"
+#include "esphome/core/log.h"
 
 namespace esphome {
- namespace mlx_90614{
-  void MLX90614Sensor::setup()  {
-      ESP_LOGCONFIG(TAG, "Setting up MLX90614Sensor...");
-      
-      if (!mlx.begin()) {
-        ESP_LOGE(TAG, "Error connecting to MLX sensor. Check wiring.");
-        while (1);
-      };
-      LOG_SENSOR("  ", "Ambient temperature", this->ambient_temperature_sensor);
-      LOG_SENSOR("  ", "Object temperature", this->object_temperature_sensor);
-    }
+namespace mlx90614 {
 
-    void MLX90614Sensor::update()  {
-      // Ambient temperature range: -40°C ... +125˚C
-      double ambient_temperature = mlx.readAmbientTempC();
-      int counter = 1;
-      while (((ambient_temperature < -40.0) || (ambient_temperature > 125.0)) && counter <= SENSOR_READ_RETRIES) {
-        // Try 5 times.
-        ambient_temperature = mlx.readAmbientTempC();
-        counter++;
-      }
-      if ((-40.0 <= ambient_temperature) && (ambient_temperature <= 125.0)) {
-        ESP_LOGD(TAG, "Ambient temperature measured: %f", ambient_temperature);
-        ambient_temperature_sensor->publish_state(ambient_temperature);
-      } else {
-        ESP_LOGW(TAG, "Ambient temperature out of range: %f", ambient_temperature);
-      }
+static const char *const TAG = "mlx90614";
 
-      // Object temperature range: -70°C ... +380˚C
-      double object_temperature = mlx.readObjectTempC();
-      counter = 1;
-      while (((object_temperature < -70.0) || (object_temperature > 380.0)) && counter <= SENSOR_READ_RETRIES) {
-        // Try 5 times.
-        object_temperature = mlx.readObjectTempC();
-        counter++;
-      }
-      if ((-70.0 <= object_temperature) && (object_temperature <= 380.0)) {
-        ESP_LOGD(TAG, "Object temperature measured: %f", object_temperature);
-        object_temperature_sensor->publish_state(object_temperature);
-      } else {
-        ESP_LOGW(TAG, "Object temperature out of range: %f", object_temperature);
-      }
-    }
- }
+// MLX90614 RAM registers
+static const uint8_t MLX90614_REG_TA   = 0x06;  // Ambient
+static const uint8_t MLX90614_REG_TOBJ = 0x07;  // Object
+
+void MLX90614Component::setup() {
+  ESP_LOGCONFIG(TAG, "Setting up MLX90614...");
 }
+
+void MLX90614Component::dump_config() {
+  ESP_LOGCONFIG(TAG, "MLX90614 Sensor:");
+  LOG_I2C_DEVICE(this);
+  LOG_UPDATE_INTERVAL(this);
+
+  if (this->ambient_sensor != nullptr)
+    LOG_SENSOR("  ", "Ambient Temperature", this->ambient_sensor);
+  if (this->object_sensor != nullptr)
+    LOG_SENSOR("  ", "Object Temperature", this->object_sensor);
+
+  ESP_LOGCONFIG(TAG, "  Diagnostic mode: %s", this->diagnostic_mode ? "ON" : "OFF");
+}
+
+void MLX90614Component::update() {
+  float ambient_c = NAN;
+  float object_c  = NAN;
+
+  bool ok_ambient = this->read_temperature_register_(MLX90614_REG_TA, ambient_c);
+  bool ok_object  = this->read_temperature_register_(MLX90614_REG_TOBJ, object_c);
+
+  if (!ok_ambient || !ok_object) {
+    ESP_LOGW(TAG, "MLX90614 read failed (ambient_ok=%d, object_ok=%d)", ok_ambient, ok_object);
+    this->status_set_warning();
+    return;
+  }
+
+  this->status_clear_warning();
+
+  if (this->ambient_sensor != nullptr && !isnan(ambient_c))
+    this->ambient_sensor->publish_state(ambient_c);
+
+  if (this->object_sensor != nullptr && !isnan(object_c))
+    this->object_sensor->publish_state(object_c);
+}
+
+bool MLX90614Component::read_temperature_register_(uint8_t reg, float &out_celsius) {
+  uint16_t raw = 0;
+  auto err = this->read16(reg, &raw);
+
+  if (err != i2c::ERROR_OK) {
+    ESP_LOGW(TAG, "I2C read error from reg 0x%02X: %d", reg, err);
+    return false;
+  }
+
+  // Convert raw value: 0.02 K per LSB
+  float temp_k = raw * 0.02f;
+  out_celsius = temp_k - 273.15f;
+
+  if (this->diagnostic_mode) {
+    ESP_LOGD(TAG, "Reg 0x%02X raw=0x%04X -> %.2f°C", reg, raw, out_celsius);
+  }
+
+  return true;
+}
+
+}  // namespace mlx90614
+}  // namespace esphome
