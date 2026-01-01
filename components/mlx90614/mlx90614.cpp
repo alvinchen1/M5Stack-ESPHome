@@ -7,8 +7,8 @@ namespace mlx90614 {
 static const char *const TAG = "mlx90614";
 
 // MLX90614 RAM registers
-static const uint8_t MLX90614_REG_TA   = 0x06;  // Ambient
-static const uint8_t MLX90614_REG_TOBJ = 0x07;  // Object
+static const uint8_t MLX90614_REG_TA   = 0x06;  // Ambient temperature
+static const uint8_t MLX90614_REG_TOBJ = 0x07;  // Object temperature
 
 void MLX90614Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up MLX90614...");
@@ -21,6 +21,7 @@ void MLX90614Component::dump_config() {
 
   if (this->ambient_sensor != nullptr)
     LOG_SENSOR("  ", "Ambient Temperature", this->ambient_sensor);
+
   if (this->object_sensor != nullptr)
     LOG_SENSOR("  ", "Object Temperature", this->object_sensor);
 
@@ -51,7 +52,9 @@ void MLX90614Component::update() {
 
 bool MLX90614Component::read_temperature_register_(uint8_t reg, float &out_celsius) {
   uint16_t raw = 0;
-  auto err = this->read16(reg, &raw);
+
+  // ESPHome 2025+ uses reg16() instead of read16()
+  auto err = this->reg16(reg, &raw);
 
   if (err != i2c::ERROR_OK) {
     ESP_LOGW(TAG, "I2C read error from reg 0x%02X: %d", reg, err);
