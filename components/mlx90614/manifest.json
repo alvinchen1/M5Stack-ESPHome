@@ -1,0 +1,9 @@
+{
+  "domain": "mlx90614",
+  "name": "MLX90614 Temperature Sensor",
+  "version": "1.0",
+  "documentation": "https://github.com/alvinchen1/M5Stack-ESPHome",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": ["@alvinchen1"]
+}

@@ -1,63 +1,61 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome import pins
-from esphome.components import sensor, i2c
 from esphome.const import (
     CONF_ID,
-    CONF_TIMEOUT,
-    STATE_CLASS_MEASUREMENT,
-    UNIT_METER, 
-    ICON_ARROW_EXPAND_VERTICAL,
-    DEVICE_CLASS_TEMPERATURE,
-    STATE_CLASS_MEASUREMENT,
-    UNIT_CELSIUS,
-    STATE_CLASS_MEASUREMENT,
-    
+    CONF_ADDRESS,
+    CONF_UPDATE_INTERVAL,
+    CONF_AMBIENT,
+    CONF_OBJECT,
 )
 
+from esphome.components import i2c, sensor
 
+CONF_DIAGNOSTIC_MODE = "diagnostic_mode"
 
-CONF_AMBIENT_TEMPERATURE = "ambient_temperature"
-CONF_OBJECT_TEMPERATURE = "object_temperature"
-AUTO_LOAD = ["sensor"]
-mlx90614_ns = cg.esphome_ns.namespace("mlx_90614")
-MLX90614 = mlx90614_ns.class_("MLX90614Sensor", cg.PollingComponent)
+mlx90614_ns = cg.esphome_ns.namespace("mlx90614")
+MLX90614Component = mlx90614_ns.class_(
+    "MLX90614Component", cg.PollingComponent, i2c.I2CDevice
+)
 
 CONFIG_SCHEMA = (
-    cv.Schema({
-      cv.GenerateID(): cv.declare_id(MLX90614),
-      cv.Optional(CONF_AMBIENT_TEMPERATURE): sensor.sensor_schema(
-                unit_of_measurement=UNIT_CELSIUS,
-                accuracy_decimals=2,
-                device_class=DEVICE_CLASS_TEMPERATURE,
-                state_class=STATE_CLASS_MEASUREMENT,
-        ),
-
-        cv.Optional(CONF_OBJECT_TEMPERATURE): sensor.sensor_schema(
-                unit_of_measurement=UNIT_CELSIUS,
-                accuracy_decimals=2,
-                device_class=DEVICE_CLASS_TEMPERATURE,
-                state_class=STATE_CLASS_MEASUREMENT,
-        ),
-       }
+    cv.Schema(
+        {
+            cv.GenerateID(): cv.declare_id(MLX90614Component),
+            cv.Required(CONF_ADDRESS): cv.i2c_address,
+            cv.Optional(CONF_UPDATE_INTERVAL, default="5s"): cv.update_interval,
+            cv.Optional(CONF_DIAGNOSTIC_MODE, default=False): cv.boolean,
+            cv.Optional(CONF_AMBIENT): sensor.sensor_schema(
+                unit_of_measurement="°C",
+                accuracy_decimals=1,
+                device_class="temperature",
+                state_class="measurement",
+            ),
+            cv.Optional(CONF_OBJECT): sensor.sensor_schema(
+                unit_of_measurement="°C",
+                accuracy_decimals=1,
+                device_class="temperature",
+                state_class="measurement",
+            ),
+        }
     )
-    .extend(cv.polling_component_schema("60s"))
+    .extend(i2c.i2c_device_schema(0x5A))
+    .extend(cv.polling_component_schema("5s"))
 )
 
 
 async def to_code(config):
-    var =  cg.new_Pvariable(config[CONF_ID])
+    var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
-    
-    if CONF_AMBIENT_TEMPERATURE in config:
-        conf = config[CONF_AMBIENT_TEMPERATURE]
-        sens = await sensor.new_sensor(conf)
-        cg.add(var.set_ambient_temperature_sensor(sens))
-    
-    if CONF_OBJECT_TEMPERATURE in config:
-        conf = config[CONF_OBJECT_TEMPERATURE]
-        sens = await sensor.new_sensor(conf)
-        cg.add(var.set_object_temperature_sensor(sens))
-    
+    await i2c.register_i2c_device(var, config)
 
-    
+    cg.add(var.set_address(config[CONF_ADDRESS]))
+    cg.add(var.set_update_interval(config[CONF_UPDATE_INTERVAL]))
+    cg.add(var.set_diagnostic_mode(config[CONF_DIAGNOSTIC_MODE]))
+
+    if CONF_AMBIENT in config:
+        ambient = await sensor.new_sensor(config[CONF_AMBIENT])
+        cg.add(var.set_ambient_sensor(ambient))
+
+    if CONF_OBJECT in config:
+        obj = await sensor.new_sensor(config[CONF_OBJECT])
+        cg.add(var.set_object_sensor(obj))
