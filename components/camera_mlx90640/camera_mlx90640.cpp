@@ -1,8 +1,6 @@
 #include "camera_mlx90640.h"
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
-#include <FS.h>
-#include <SPIFFS.h>
 
 namespace esphome {
 namespace mlx90640_app {
@@ -35,7 +33,6 @@ class ThermalImageHandler : public AsyncWebHandler {
       return;
     }
     
-    // Send BMP image as binary data
     AsyncWebServerResponse *response = request->beginResponse(
         200,
         "image/bmp",
@@ -82,12 +79,6 @@ void MLX90640::setup() {
   // Set refresh rate
   MLX90640_SetRefreshRate(this->address_, this->refresh_rate_);
 
-  // Initialize SPIFFS (optional, for backward compatibility)
-  if (!SPIFFS.begin(true)) {
-    ESP_LOGD(TAG, "SPIFFS not available");
-  }
-
-  // Setup web server handler
 #ifdef USE_WEBSERVER
   if (this->base_ != nullptr) {
     ESP_LOGI(TAG, "Registering thermal camera web handler");
@@ -105,26 +96,20 @@ void MLX90640::setup() {
 void MLX90640::update() {
   ESP_LOGV(TAG, "Updating MLX90640 data...");
 
-  // Read thermal data from sensor
   this->read_thermal_data_();
-
-  // Generate BMP image
   this->generate_bmp_image_();
-
-  // Publish temperature sensors to Home Assistant
   this->publish_sensors_();
 
-  // Mark image as ready
   this->image_ready_ = true;
   this->last_frame_time_ = millis();
 }
 
 // ============================================================================
-// Loop - Called continuously
+// Loop
 // ============================================================================
 
 void MLX90640::loop() {
-  // Nothing needed in loop
+  // Nothing needed
 }
 
 // ============================================================================
@@ -155,19 +140,16 @@ void MLX90640::dump_config() {
 }
 
 // ============================================================================
-// Read Thermal Data from MLX90640
+// Read Thermal Data
 // ============================================================================
 
 void MLX90640::read_thermal_data_() {
   uint16_t frame[834];
   int status;
 
-  // Get frame data
   for (int retry = 0; retry < 3; retry++) {
     status = MLX90640_GetFrameData(this->address_, frame);
-    if (status >= 0) {
-      break;
-    }
+    if (status >= 0) break;
     ESP_LOGW(TAG, "Failed to get frame data, retry %d/3", retry + 1);
     delay(10);
   }
@@ -177,7 +159,6 @@ void MLX90640::read_thermal_data_() {
     return;
   }
 
-  // Calculate temperatures
   float vdd = MLX90640_GetVdd(frame, &this->mlx90640_);
   float ta = MLX90640_GetTa(frame, &this->mlx90640_);
   float tr = ta - 8.0f;
@@ -195,11 +176,10 @@ void MLX90640::read_thermal_data_() {
 void MLX90640::generate_bmp_image_() {
   const int width = 32;
   const int height = 24;
-  const int scale = 10;  // 320x240 output
+  const int scale = 10;
   const int scaled_width = width * scale;
   const int scaled_height = height * scale;
 
-  // Calculate min/max temperatures
   this->min_value_ = this->mlx90640To_[0];
   this->max_value_ = this->mlx90640To_[0];
 
@@ -209,30 +189,25 @@ void MLX90640::generate_bmp_image_() {
     if (temp > this->max_value_) this->max_value_ = temp;
   }
 
-  // Clamp to configured range
   if (this->min_value_ < this->mintemp_) this->min_value_ = this->mintemp_;
   if (this->max_value_ > this->maxtemp_) this->max_value_ = this->maxtemp_;
 
   float temp_range = this->max_value_ - this->min_value_;
   if (temp_range < 1.0f) temp_range = 1.0f;
 
-  // BMP header (54 bytes) + pixel data (320x240x3)
-  const int row_size = ((scaled_width * 3 + 3) / 4) * 4;  // Row must be multiple of 4
+  const int row_size = ((scaled_width * 3 + 3) / 4) * 4;
   const int pixel_data_size = row_size * scaled_height;
   const int file_size = 54 + pixel_data_size;
-  
+
   this->current_image_.resize(file_size);
   uint8_t *data = this->current_image_.data();
-  
-  // BMP File Header (14 bytes)
-  data[0] = 'B'; data[1] = 'M';  // Signature
-  memcpy(&data[2], &file_size, 4);  // File size
-  data[6] = 0; data[7] = 0;  // Reserved
-  data[8] = 0; data[9] = 0;  // Reserved
+
+  // BMP header
+  data[0] = 'B'; data[1] = 'M';
+  memcpy(&data[2], &file_size, 4);
   uint32_t pixel_offset = 54;
-  memcpy(&data[10], &pixel_offset, 4);  // Pixel data offset
-  
-  // BMP Info Header (40 bytes)
+  memcpy(&data[10], &pixel_offset, 4);
+
   uint32_t header_size = 40;
   memcpy(&data[14], &header_size, 4);
   memcpy(&data[18], &scaled_width, 4);
@@ -241,102 +216,78 @@ void MLX90640::generate_bmp_image_() {
   memcpy(&data[26], &planes, 2);
   uint16_t bits_per_pixel = 24;
   memcpy(&data[28], &bits_per_pixel, 2);
-  uint32_t compression = 0;
-  memcpy(&data[30], &compression, 4);
+
   memcpy(&data[34], &pixel_data_size, 4);
-  uint32_t ppm = 2835;  // 72 DPI
-  memcpy(&data[38], &ppm, 4);  // X pixels per meter
-  memcpy(&data[42], &ppm, 4);  // Y pixels per meter
-  uint32_t colors = 0;
-  memcpy(&data[46], &colors, 4);
-  memcpy(&data[50], &colors, 4);
-  
-  // Generate pixel data (BMP is bottom-up)
+
+  uint32_t ppm = 2835;
+  memcpy(&data[38], &ppm, 4);
+  memcpy(&data[42], &ppm, 4);
+
+  // Pixel data
   for (int y = 0; y < height; y++) {
     for (int x = 0; x < width; x++) {
       int idx = y * width + x;
       float temp = this->mlx90640To_[idx];
       float normalized = (temp - this->min_value_) / temp_range;
-      if (normalized < 0.0f) normalized = 0.0f;
-      if (normalized > 1.0f) normalized = 1.0f;
-      
+      normalized = clamp(normalized, 0.0f, 1.0f);
+
       uint8_t r, g, b;
       this->apply_color_map_(normalized, r, g, b);
-      
-      // Scale and write pixels (bottom-up)
+
       for (int sy = 0; sy < scale; sy++) {
         for (int sx = 0; sx < scale; sx++) {
-          int bmp_y = (scaled_height - 1) - (y * scale + sy);  // Flip vertically
+          int bmp_y = (scaled_height - 1) - (y * scale + sy);
           int bmp_x = x * scale + sx;
           int pixel_offset = 54 + (bmp_y * row_size) + (bmp_x * 3);
-          
-          data[pixel_offset + 0] = b;  // BMP is BGR
+
+          data[pixel_offset + 0] = b;
           data[pixel_offset + 1] = g;
           data[pixel_offset + 2] = r;
         }
       }
     }
   }
-
-  ESP_LOGV(TAG, "Generated BMP image: %dx%d, %.1f-%.1f°C",
-           scaled_width, scaled_height, this->min_value_, this->max_value_);
 }
 
 // ============================================================================
-// Apply Thermal Color Map
+// Color Map
 // ============================================================================
 
 void MLX90640::apply_color_map_(float value, uint8_t &r, uint8_t &g, uint8_t &b) {
-  if (value < 0.0f) value = 0.0f;
-  if (value > 1.0f) value = 1.0f;
+  value = clamp(value, 0.0f, 1.0f);
 
-  // Ironbow colormap
   if (value < 0.2f) {
     float t = value * 5.0f;
-    r = 0;
-    g = 0;
-    b = static_cast<uint8_t>(100 + t * 155);
+    r = 0; g = 0; b = uint8_t(100 + t * 155);
   } else if (value < 0.4f) {
     float t = (value - 0.2f) * 5.0f;
-    r = 0;
-    g = static_cast<uint8_t>(t * 255);
-    b = 255;
+    r = 0; g = uint8_t(t * 255); b = 255;
   } else if (value < 0.6f) {
     float t = (value - 0.4f) * 5.0f;
-    r = 0;
-    g = 255;
-    b = static_cast<uint8_t>((1.0f - t) * 255);
+    r = 0; g = 255; b = uint8_t((1.0f - t) * 255);
   } else if (value < 0.8f) {
     float t = (value - 0.6f) * 5.0f;
-    r = static_cast<uint8_t>(t * 255);
-    g = 255;
-    b = 0;
+    r = uint8_t(t * 255); g = 255; b = 0;
   } else {
     float t = (value - 0.8f) * 5.0f;
-    r = 255;
-    g = static_cast<uint8_t>(255 - t * 100);
-    b = static_cast<uint8_t>(t * 200);
+    r = 255; g = uint8_t(255 - t * 100); b = uint8_t(t * 200);
   }
 }
 
 // ============================================================================
-// Publish Temperature Sensors
+// Publish Sensors
 // ============================================================================
 
 void MLX90640::publish_sensors_() {
-  if (this->min_temperature_sensor_ != nullptr) {
+  if (this->min_temperature_sensor_ != nullptr)
     this->min_temperature_sensor_->publish_state(this->min_value_);
-  }
 
-  if (this->max_temperature_sensor_ != nullptr) {
+  if (this->max_temperature_sensor_ != nullptr)
     this->max_temperature_sensor_->publish_state(this->max_value_);
-  }
 
   if (this->mean_temperature_sensor_ != nullptr) {
     float sum = 0.0f;
-    for (int i = 0; i < 768; i++) {
-      sum += this->mlx90640To_[i];
-    }
+    for (int i = 0; i < 768; i++) sum += this->mlx90640To_[i];
     this->mean_temperature_sensor_->publish_state(sum / 768.0f);
   }
 
@@ -345,9 +296,6 @@ void MLX90640::publish_sensors_() {
     std::sort(temps.begin(), temps.end());
     this->median_temperature_sensor_->publish_state(temps[384]);
   }
-
-  ESP_LOGV(TAG, "Published sensors - Min: %.1f°C, Max: %.1f°C",
-           this->min_value_, this->max_value_);
 }
 
 }  // namespace mlx90640_app

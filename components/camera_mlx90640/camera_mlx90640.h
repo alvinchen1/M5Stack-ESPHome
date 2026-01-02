@@ -15,11 +15,11 @@
 namespace esphome {
 namespace mlx90640_app {
 
-// Keep as PollingComponent only (camera functionality via web server)
 class MLX90640 : public PollingComponent, public i2c::I2CDevice {
  public:
   MLX90640() = default;
 
+  // Core ESPHome lifecycle
   void setup() override;
   void update() override;
   void loop() override;
@@ -27,34 +27,26 @@ class MLX90640 : public PollingComponent, public i2c::I2CDevice {
   float get_setup_priority() const override { return setup_priority::DATA; }
 
   // Sensor setters
-  void set_min_temperature_sensor(sensor::Sensor *min_temperature_sensor) {
-    this->min_temperature_sensor_ = min_temperature_sensor;
-  }
-  void set_max_temperature_sensor(sensor::Sensor *max_temperature_sensor) {
-    this->max_temperature_sensor_ = max_temperature_sensor;
-  }
-  void set_mean_temperature_sensor(sensor::Sensor *mean_temperature_sensor) {
-    this->mean_temperature_sensor_ = mean_temperature_sensor;
-  }
-  void set_median_temperature_sensor(sensor::Sensor *median_temperature_sensor) {
-    this->median_temperature_sensor_ = median_temperature_sensor;
-  }
+  void set_min_temperature_sensor(sensor::Sensor *s) { this->min_temperature_sensor_ = s; }
+  void set_max_temperature_sensor(sensor::Sensor *s) { this->max_temperature_sensor_ = s; }
+  void set_mean_temperature_sensor(sensor::Sensor *s) { this->mean_temperature_sensor_ = s; }
+  void set_median_temperature_sensor(sensor::Sensor *s) { this->median_temperature_sensor_ = s; }
 
   // Configuration setters
   void set_sda_pin(int sda) { this->sda_pin_ = sda; }
   void set_scl_pin(int scl) { this->scl_pin_ = scl; }
-  void set_frequency(int frequency) { this->frequency_ = frequency; }
-  void set_address(uint8_t address) { this->address_ = address; }
-  void set_mintemp(float mintemp) { this->mintemp_ = mintemp; }
-  void set_maxtemp(float maxtemp) { this->maxtemp_ = maxtemp; }
-  void set_refresh_rate(uint8_t refresh_rate) { this->refresh_rate_ = refresh_rate; }
+  void set_frequency(int freq) { this->frequency_ = freq; }
+  void set_address(uint8_t addr) { this->address_ = addr; }
+  void set_mintemp(float t) { this->mintemp_ = t; }
+  void set_maxtemp(float t) { this->maxtemp_ = t; }
+  void set_refresh_rate(uint8_t rate) { this->refresh_rate_ = rate; }
 
 #ifdef USE_WEBSERVER
-  void set_base(web_server_base::WebServerBase *base) { this->base_ = base; }
-  
-  // Method to get current image for web server
+  void set_base(web_server_base::WebServerBase *b) { this->base_ = b; }
+
+  // Web server accessors
   std::vector<uint8_t> get_current_image() { return this->current_image_; }
-  bool is_image_ready() { return this->image_ready_; }
+  bool is_image_ready() const { return this->image_ready_; }
 #endif
 
  protected:
@@ -65,31 +57,32 @@ class MLX90640 : public PollingComponent, public i2c::I2CDevice {
   sensor::Sensor *median_temperature_sensor_{nullptr};
 
   // Configuration
-  int sda_pin_;
-  int scl_pin_;
-  int frequency_;
-  uint8_t address_;
-  float mintemp_;
-  float maxtemp_;
-  uint8_t refresh_rate_;
+  int sda_pin_{-1};
+  int scl_pin_{-1};
+  int frequency_{400000};
+  uint8_t address_{0x33};
+  float mintemp_{15.0f};
+  float maxtemp_{40.0f};
+  uint8_t refresh_rate_{0x04};
 
 #ifdef USE_WEBSERVER
   web_server_base::WebServerBase *base_{nullptr};
 #endif
 
-  // MLX90640 specific
+  // MLX90640 internal structures
   paramsMLX90640 mlx90640_;
   uint16_t eeMLX90640_[832];
   float mlx90640To_[768];  // 32x24 thermal array
-  float min_value_;
-  float max_value_;
-  
-  // Image data for web server
+
+  float min_value_{0};
+  float max_value_{0};
+
+  // Image buffer for web server
   std::vector<uint8_t> current_image_;
   bool image_ready_{false};
   uint32_t last_frame_time_{0};
-  
-  // Helper methods
+
+  // Internal helpers
   void read_thermal_data_();
   void generate_bmp_image_();
   void publish_sensors_();
