@@ -1,5 +1,6 @@
 #include "MLX90640_I2C_Driver.h"
 #include "esphome/core/log.h"
+#include <vector>
 
 static esphome::i2c::I2CDevice *global_mlx_device = nullptr;
 static const char *const TAG = "mlx90640_driver";
@@ -19,16 +20,13 @@ int MLX90640_I2CRead(uint8_t _deviceAddress, unsigned int startAddress,
   cmd[0] = startAddress >> 8;
   cmd[1] = startAddress & 0xFF;
 
-  if (global_mlx_device->write(cmd, 2) != esphome::i2c::ERROR_OK) {
-    return -1;
-  }
-
   uint16_t bytesRemaining = nWordsRead * 2;
   // Use vector to avoid VLA
   std::vector<uint8_t> buf(bytesRemaining);
 
-  if (global_mlx_device->read(buf.data(), bytesRemaining) !=
+  if (global_mlx_device->write_read(cmd, 2, buf.data(), bytesRemaining) !=
       esphome::i2c::ERROR_OK) {
+    ESP_LOGW(TAG, "I2C fail: write_read address 0x%04X", startAddress);
     return -1;
   }
 
