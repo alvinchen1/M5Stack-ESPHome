@@ -7,13 +7,15 @@ Under your "esphome" section of your yaml, you'll need to add some additional in
 esphome:
   name: "espatom-ir2"
   libraries:
-    - SPI
-    - Wire
     - adafruit/Adafruit BusIO @ 1.9.6
 </pre>
 
 Then you can add the main configuration for the unit:
 <pre>
+esp32:
+  framework:
+    type: arduino
+
 external_components:
   - source:
       type: git
