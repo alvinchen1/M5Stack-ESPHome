@@ -17,38 +17,39 @@
 #ifndef _MLX90640_I2C_Driver_H_
 #define _MLX90640_I2C_Driver_H_
 
+#include "esphome/components/i2c/i2c.h"
 #include <stdint.h>
-#include <Wire.h>
-//Define the size of the I2C buffer based on the platform the user has
+
+// Define the size of the I2C buffer based on the platform the user has
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
 
-//I2C_BUFFER_LENGTH is defined in Wire.H
+// I2C_BUFFER_LENGTH is defined in Wire.H
 #define I2C_BUFFER_LENGTH BUFFER_LENGTH
 
 #elif defined(__SAMD21G18A__)
 
-//SAMD21 uses RingBuffer.h
+// SAMD21 uses RingBuffer.h
 #define I2C_BUFFER_LENGTH SERIAL_BUFFER_SIZE
 
 #elif __MK20DX256__
-//Teensy
+// Teensy
 
 #elif ARDUINO_ARCH_ESP32
-//ESP32 based platforms
+// ESP32 based platforms
 
 #else
 
-//The catch-all default is 32
+// The catch-all default is 32
 #define I2C_BUFFER_LENGTH 32
 
 #endif
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-
-void MLX90640_I2CInit(TwoWire *wire);
-int MLX90640_I2CRead(uint8_t slaveAddr, unsigned int startAddress, unsigned int nWordsRead, uint16_t *data);
-int MLX90640_I2CWrite(uint8_t slaveAddr, unsigned int writeAddress, uint16_t data);
+void MLX90640_SetDevice(esphome::i2c::I2CDevice *dev);
+int MLX90640_I2CRead(uint8_t slaveAddr, unsigned int startAddress,
+                     unsigned int nWordsRead, uint16_t *data);
+int MLX90640_I2CWrite(uint8_t slaveAddr, unsigned int writeAddress,
+                      uint16_t data);
 void MLX90640_I2CFreqSet(int freq);
-bool MLX90640_isConnected(uint8_t addr) ;
 #endif
