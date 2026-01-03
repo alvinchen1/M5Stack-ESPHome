@@ -6,10 +6,15 @@ from esphome.const import CONF_ID
 from esphome.core import CORE
 from . import ns
 DEPENDENCIES = ["i2c", "sensor"]
+AUTO_LOAD = ["i2c", "sensor"]
 
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(): cv.declare_id(ns.MLX90640Component),
     cv.Optional(ns.CONF_EMISSIVITY, default=0.95): cv.float_,
+    # Allow specifying I2C bus pins and frequency in the component block
+    cv.Optional("sda"): cv.int_,
+    cv.Optional("scl"): cv.int_,
+    cv.Optional("frequency"): cv.int_,
     cv.Optional("min_temperature"): sensor.sensor_schema(
         unit_of_measurement="°C", accuracy_decimals=1
     ),
@@ -24,6 +29,7 @@ CONFIG_SCHEMA = cv.Schema({
     ),
     cv.Optional("mintemp", default=15.0): cv.float_,
     cv.Optional("maxtemp", default=40.0): cv.float_,
+    cv.Optional("refresh_rate"): cv.int_,
 }).extend(cv.polling_component_schema("60s")).extend(i2c.i2c_device_schema(0x33))
 
 async def to_code(config):
