@@ -5,7 +5,7 @@ from esphome.components import i2c, sensor
 from esphome.const import CONF_ID
 from esphome.core import CORE
 from . import ns
-DEPENDENCIES = ["i2c", "sensor", "wifi"]
+DEPENDENCIES = ["i2c", "sensor"]
 
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(): cv.declare_id(ns.MLX90640Component),
